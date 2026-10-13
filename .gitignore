@@ -1,0 +1,77 @@
+# ============================================================
+# Trato MarketPlace — .gitignore
+# Regla: en Git solo vive el codigo fuente, las configuraciones de
+# despliegue y el DDL versionado. Nada de secretos, bases locales,
+# binarios descargados ni artefactos de build.
+# ============================================================
+
+# ---------- Dependencias ----------
+node_modules/
+
+# ---------- Builds ----------
+dist/
+.next/
+out/
+.turbo/
+*.tsbuildinfo
+
+# ---------- Caches de herramientas ----------
+.cache/
+.eslintcache
+.stylelintcache
+
+# ---------- Secretos / entorno ----------
+# Las variables van en los dashboards de Vercel / Render / Turso /
+# Meilisearch Cloud. Nunca en el repo.
+.env
+.env.local
+.env.*.local
+!.env.example
+
+# ---------- Base de datos local (libSQL / SQLite) ----------
+apps/api/db/
+# por si aparece algun archivo suelto en otro lado
+*.db
+*.db-shm
+*.db-wal
+*.db-journal
+
+# ---------- Binarios y datos locales del buscador ----------
+tools/*.exe
+tools/meili-data/
+tools/meilisearch/
+
+# ---------- Tests ----------
+coverage/
+test-results/
+playwright-report/
+
+# ---------- Logs ----------
+*.log
+logs/
+npm-debug.*
+yarn-debug.*
+yarn-error.*
+pnpm-debug.*
+
+# ---------- Sistema operativo ----------
+.DS_Store
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+~$*
+
+# ---------- Editores ----------
+.idea/
+*.swp
+*.swo
+
+# ---------- Plataformas ----------
+.vercel/
+.netlify/
+
+# ---------- Python (entorno preexistente del usuario) ----------
+venv/
+__pycache__/
+*.pyc
+*.pyo

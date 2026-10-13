@@ -1,0 +1,63 @@
+# ----------------------------------------------------------------------------------
+# Despliegue en Render (monorepo, npm workspaces).
+#
+# Servicios recomendados:
+#   - trato-api (Node, obligatorio)
+#   - trato-web (opcional: en producción recomendamos Vercel para Next.js)
+#
+# Piezas externas (no van en Render):
+#   - Base de datos: Turso (servicio libSQL gestionado, sin contenedores)
+#   - Buscador: Meilisearch Cloud, o Render con disco persistente
+#
+# Ambos servicios se construyen desde la RAIZ del repo (npm install en la raiz
+# instala los workspaces; el script prepare compila @trato/shared).
+# ----------------------------------------------------------------------------------
+
+version: "1"
+
+services:
+  - type: web
+    name: trato-api
+    runtime: node
+    plan: free
+    region: oregon
+    rootDir: .
+    buildCommand: npm install && npm run build -w @trato/shared && npm run build -w @trato/api
+    startCommand: npm run start
+    healthCheckPath: /api/v1/health
+    autoDeploy: true
+    envVars:
+      # Turso: base remota. Render free tiene FS efimero -> no usar replica embebida.
+      - key: DATABASE_URL                # libsql://<db>-<org>.turso.io
+        sync: false
+      - key: TURSO_AUTH_TOKEN
+        sync: false
+      - key: TURSO_SYNC_URL              # vacio salvo modo replica (host con disco)
+        value: ""
+      - key: TURSO_SYNC_INTERVAL
+        value: "60000"
+      - key: JWT_SECRET
+        sync: false
+      - key: JWT_EXPIRES_IN
+        value: "7d"
+      - key: MEILISEARCH_URL             # https://... (Meilisearch Cloud)
+        sync: false
+      - key: MEILISEARCH_MASTER_KEY
+        sync: false
+      - key: WEB_ORIGIN                  # https://<tu-web>.vercel.app
+        sync: false
+
+  # Opcional: servir el frontend tambien desde Render (SSR con next start).
+  # Si usas Vercel para la web, borra este bloque.
+  - type: web
+    name: trato-web
+    runtime: node
+    plan: free
+    region: oregon
+    rootDir: .
+    buildCommand: npm install && npm run build -w @trato/shared && npm run build -w @trato/web
+    startCommand: npm run start -w @trato/web
+    autoDeploy: true
+    envVars:
+      - key: NEXT_PUBLIC_API_URL         # https://trato-api.onrender.com/api/v1
+        sync: false

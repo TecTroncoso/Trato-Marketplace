@@ -1,0 +1,20 @@
+# Infraestructura opcional de Trato.
+# La base de datos es libSQL: por defecto un archivo local (sin Docker) y en
+# producción Turso (servicio gestionado, sin contenedores). Este compose sólo
+# levanta Meilisearch para tener el buscador real en desarrollo.
+
+services:
+  meilisearch:
+    image: getmeili/meilisearch:v1.54.3
+    container_name: trato-meilisearch
+    restart: unless-stopped
+    environment:
+      MEILI_MASTER_KEY: tratoMasterKeyDev
+      MEILI_ENV: development
+    ports:
+      - "7700:7700"
+    volumes:
+      - trato-meili-data:/meili_data
+
+volumes:
+  trato-meili-data:

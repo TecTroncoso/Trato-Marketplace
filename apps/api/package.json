@@ -1,0 +1,45 @@
+{
+  "name": "@trato/api",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "prebuild": "npm --prefix ../../packages/shared run build",
+    "build": "nest build",
+    "dev": "nest start --watch",
+    "start": "node dist/main.js",
+    "db:generate": "drizzle-kit generate",
+    "db:push": "drizzle-kit push --force",
+    "db:studio": "drizzle-kit studio",
+    "db:reset": "node -e \"const fs=require('node:fs');fs.rmSync('./db',{recursive:true,force:true});fs.mkdirSync('./db',{recursive:true})\" && drizzle-kit push --force && tsx src/db/seed/seed.ts",
+    "seed": "tsx src/db/seed/seed.ts",
+    "search:reindex": "tsx scripts/reindex.ts"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "@libsql/client": "^0.18.0",
+    "@nestjs/common": "^11.2.7",
+    "@nestjs/core": "^11.2.7",
+    "@nestjs/jwt": "^11.0.2",
+    "@nestjs/platform-express": "^11.2.7",
+    "@nestjs/swagger": "^11.4.7",
+    "@trato/shared": "*",
+    "bcryptjs": "^3.0.3",
+    "class-transformer": "^0.5.1",
+    "class-validator": "^0.14.1",
+    "dotenv": "^16.4.5",
+    "drizzle-orm": "^0.45.4",
+    "meilisearch": "^0.62.0",
+    "reflect-metadata": "^0.2.2",
+    "rxjs": "^7.8.1"
+  },
+  "devDependencies": {
+    "@nestjs/cli": "^11.0.0",
+    "@types/express": "^5.0.0",
+    "@types/node": "^22.0.0",
+    "drizzle-kit": "^0.31.11",
+    "tsx": "^4.23.15",
+    "typescript": "^5.6.0"
+  }
+}
