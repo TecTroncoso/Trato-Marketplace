@@ -62,7 +62,7 @@ export function SiteFooter() {
         <div className="mx-auto flex max-w-[1220px] flex-col gap-2 px-4 py-6 text-xs text-trato-muted sm:flex-row sm:items-center sm:justify-between">
           <p>© {new Date().getFullYear()} Trato MarketPlace. Todos los derechos reservados.</p>
           <p>
-            Demo técnica con Next.js 15, NestJS, Prisma y Meilisearch. No es un sitio de comercio real.
+            Demo técnica con Next.js 15, NestJS, Drizzle ORM sobre Turso y Meilisearch. No es un sitio de comercio real.
           </p>
         </div>
       </div>
