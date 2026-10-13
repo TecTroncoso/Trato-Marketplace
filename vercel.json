@@ -5,7 +5,7 @@
       "root": "apps/api",
       "framework": "nestjs",
       "buildCommand": "npm run build",
-      "entrypoint": "dist/main.js"
+      "entrypoint": "src/main.ts"
     },
     "web": {
       "root": "apps/web",

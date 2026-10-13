@@ -65,7 +65,7 @@ Los dos servicios conviven en **un solo proyecto** de Vercel con **un solo domin
       "root": "apps/api",
       "framework": "nestjs",
       "buildCommand": "npm run build",
-      "entrypoint": "dist/main.js"
+      "entrypoint": "src/main.ts"
     },
     "web": {
       "root": "apps/web",
@@ -84,7 +84,8 @@ Los dos servicios conviven en **un solo proyecto** de Vercel con **un solo domin
 ```
 
 1. Vercel → Add project → importa el repo (Root Directory: **raíz** — no `apps/web`).
-2. Env vars (Settings → Environment Variables):
+2. **Framework: Services.** En el paso "New Project", el dropdown *Application Preset* debe decir `Services` (no `Next.js` — por eso avisa "Possible configuration mismatch"). Si ya creaste el proyecto, cambialo en Settings → Build and Deployment → Framework Preset → **Services** y redesplegá.
+3. Env vars (Settings → Environment Variables):
 
 | Servicio | Variable | Nota |
 |---|---|---|
