@@ -644,10 +644,12 @@ Stack de despliegue recomendado:
 
 | Pieza | Plataforma | Artefacto |
 |---|---|---|
-| Web (Next.js 15, SSR) | Vercel | `apps/web/vercel.json` (instala y compila el monorepo con Root Directory `apps/web`). |
-| API (NestJS 11) | Render | `render.yaml` (Blueprint de infraestructura como código: servicio `trato-api` y `trato-web` opcional). |
+| Web (Next.js 15, SSR) | Vercel | **Un solo proyecto multi-service** (recomendado): `vercel.json` en la raíz enruta `/api/(.*)` al servicio `api` y el resto a `web`, con el binding `web → api` (inyecta `API_SERVICE_URL`). Alternativa split: web en Vercel con `apps/web/vercel.json`. |
+| API (NestJS 11) | Vercel (mismo proyecto, público bajo `/api/`) o Render | `render.yaml` (Blueprint: servicio `trato-api` y `trato-web` opcional). |
 | Base de datos | Turso | `libsql://<db>-<org>.turso.io` (o réplica embebida en host con disco persistente). |
 | Buscador | Meilisearch Cloud | `MEILISEARCH_URL` + `MEILISEARCH_MASTER_KEY`. |
+
+En el modo multi-service desaparece el cross-origin: el navegador llama a `/api/v1/...` en el mismo dominio y el SSR usa el binding inyectado. El cambio es transparente para el código: `apps/web/src/lib/api.ts` resuelve la base según el entorno (binding en functions de Vercel, `NEXT_PUBLIC_API_URL` en dev/split, relativo en el navegador).
 
 Los builds son standalone por workspace: cada `apps/*/package.json` tiene un `prebuild` que compila `@trato/shared`, y la raíz corre `prepare` durante `npm install`. No hay pasos manuales ni ficheros externos al repo.
 

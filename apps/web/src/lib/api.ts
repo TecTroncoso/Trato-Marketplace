@@ -1,4 +1,15 @@
-export const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000/api/v1";
+function apiBase(): string {
+  if (typeof window !== "undefined") {
+    const explicit = process.env.NEXT_PUBLIC_API_URL;
+    if (explicit && explicit.trim()) return explicit.trim().replace(/\/+$/, "");
+    return "/api/v1";
+  }
+  const bound = process.env.API_SERVICE_URL;
+  if (bound && bound.trim()) return `${bound.trim().replace(/\/+$/, "")}/api/v1`;
+  return process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000/api/v1";
+}
+
+export const API_BASE = apiBase();
 
 export class ApiError extends Error {
   status: number;

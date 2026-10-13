@@ -53,51 +53,90 @@ npm run seed            # 370 productos indexados directamente en Meilisearch Cl
 
 La y sobre falta el motor, la API detecta la caida y el frontend sigue mostrando resultados en modo local (menos relevante y sin facetas del indice, pero leal).
 
-## 5. API en Render
+## 5. Vercel multi-service (recomendado)
 
-El blueprint `render.yaml` ya tiene el servicio. Import asi:
+Los dos servicios conviven en **un solo proyecto** de Vercel con **un solo dominio**: la web en `/` y la API bajo `/api/(.*)`. Desaparece CORS y no hace falta publicar la API aparte. El archivo `vercel.json` de la raiz ya viene listo:
+
+```json
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "services": {
+    "api": {
+      "root": "apps/api",
+      "framework": "nestjs",
+      "buildCommand": "npm run build",
+      "entrypoint": "dist/main.js"
+    },
+    "web": {
+      "root": "apps/web",
+      "framework": "nextjs",
+      "buildCommand": "npm run build",
+      "bindings": [
+        { "type": "service", "service": "api", "format": "url", "env": "API_SERVICE_URL" }
+      ]
+    }
+  },
+  "rewrites": [
+    { "source": "/api/(.*)", "destination": { "service": "api" } },
+    { "source": "/(.*)", "destination": { "service": "web" } }
+  ]
+}
+```
+
+1. Vercel → Add project → importa el repo (Root Directory: **raíz** — no `apps/web`).
+2. Env vars (Settings → Environment Variables):
+
+| Servicio | Variable | Nota |
+|---|---|---|
+| api | `DATABASE_URL` | `libsql://trato-<org>.turso.io` |
+| api | `TURSO_AUTH_TOKEN` | token de Turso |
+| api | `TURSO_SYNC_URL` | vacío (sin disco persistente) |
+| api | `JWT_SECRET` / `JWT_EXPIRES_IN` | cadena fuerte / `7d` |
+| api | `MEILISEARCH_URL` / `MEILISEARCH_MASTER_KEY` | Meilisearch Cloud |
+| api | `WEB_ORIGIN` | `https://<tu-dominio>.vercel.app` |
+| web | `API_SERVICE_URL` | **la inyecta el binding, no la definas vos** |
+| web | `NEXT_PUBLIC_API_URL` | **no la definas en este modo** (deshabilita el rewrite relativo) |
+
+3. Cómo viajan las llamadas:
+   - **Browser**: fetch relativo a `/api/v1/...` → mismo dominio → rewrite → servicio `api`. Sin CORS.
+   - **SSR** (Server Components): el binding inyecta la URL interna del servicio en `process.env.API_SERVICE_URL`; `apps/web/src/lib/api.ts` la usa de base (y le agrega `/api/v1`). El binding resuelve en functions, no en build ni en middleware —nuestro SSR es dinámico (`cache:no-store`), así que siempre está disponible.
+   - **Local**: `NEXT_PUBLIC_API_URL=http://localhost:4000/api/v1` sigue igual.
+   - **Port binding dentro de Vercel**: Nest leé `process.env.PORT` (Vercel la inyecta); el `entrypoint` es `dist/main.js`.
+
+4. Test local del deploy sin publicar: `vercel dev` levanta ambos servicios con bindings inyectados.
+
+> La API queda pública solo bajo `/api/` (incluye `/api/docs`). Un servicio interno recibe tráfico solo por rewrite.
+
+## 6. Alternativa: API en Render + Web en Vercel (split)
+
+Si preferís Render para la API o tu plan no habilita services:
+
+El blueprint `render.yaml` ya tiene los servicios (`trato-api` y `trato-web`, este último opcional si la web queda en Vercel):
 
 1. Render → New → **Blueprint** → conecta el repo.
-2. Render detecta `render.yaml`, crea `trato-api` y `trato-web`. Si no queres la web en Render, borra el bloque `trato-web` del archivo.
-3. Configura las env vars (estan como `sync: false`):
+2. Render lee `render.yaml` y crea ambos servicios.
+3. Env vars (estan como `sync: false` en el blueprint):
 
 | Variable | Valor |
 |---|---|
 | `DATABASE_URL` | `libsql://trato-<org>.turso.io` |
-| `TURSO_AUTH_TOKEN` | token del paso 3 |
-| `TURSO_SYNC_URL` | vacio (salvo replica embebida) |
+| `TURSO_AUTH_TOKEN` | token de Turso |
+| `TURSO_SYNC_URL` | vacio |
 | `TURSO_SYNC_INTERVAL` | `60000` |
-| `JWT_SECRET` | genera una cadena fuerte |
-| `MEILISEARCH_URL` | `https://<project>.meilisearch.io` |
-| `MEILISEARCH_MASTER_KEY` | master key del cloud |
-| `WEB_ORIGIN` | `https://<tu-web>.vercel.app` (CORS) |
+| `JWT_SECRET` | cadena fuerte |
+| `MEILISEARCH_URL` / `MEILISEARCH_MASTER_KEY` | Meilisearch Cloud |
+| `WEB_ORIGIN` | `https://<tu-web>.vercel.app` (CORS cross-origin) |
+| `NEXT_PUBLIC_API_URL` (web en Vercel) | `https://trato-api.onrender.com/api/v1` — se cocina en build |
 
-4. Health check automatico: `GET /api/v1/health` debe devolver `database: ok`, `databaseMode: remote`, `searchEngine: meilisearch`.
+4. Health check: `GET https://trato-api.onrender.com/api/v1/health` debe devolver `database: ok`, `databaseMode: remote`, `searchEngine: meilisearch`.
 
-Render asigna `PORT` (10000) y nuestro `main.ts` ya lo lee via `process.env.PORT`. No hay que definirlo.
-
-## 6. Web en Vercel
-
-```bash
-# automatico: vercel.json dentro de apps/web define install/build para monorepo
-```
-
-1. Vercel → Add project → importa el repo.
-2. **Root Directory: `apps/web`.** Vercel lee `apps/web/vercel.json` -> install y build corren con `cd ../..` correctamente.
-3. Variables (`Settings → Environment Variables`):
-
-| Variable | Valor | Nota |
-|---|---|---|
-| `NEXT_PUBLIC_API_URL` | `https://trato-api.onrender.com/api/v1` | se fija en build; cambiarla requiere redeploy |
-
-4. Queda CORS cubierto si `WEB_ORIGIN` en la API coincide con el dominio de Vercel.
-
-> Alternativa Render para la web: el bloque `trato-web` de `render.yaml` ya la sirve con SSR (`next start`). Preferi Vercel para Next por el edge network y la integracion con `App Router`.
+Render asigna `PORT` y `main.ts` lo lee via `process.env.PORT`.
 
 ## 7. Verificacion de la puesta
 
 ```powershell
-# 1. infra
+# 1. infra (multi-service: mismo dominio que la web ▼ | split: dominio de Render ▼)
+Invoke-RestMethod https://<tu-dominio>.vercel.app/api/v1/health
 Invoke-RestMethod https://trato-api.onrender.com/api/v1/health
 # → database: ok · databaseMode: remote · engine: meilisearch
 

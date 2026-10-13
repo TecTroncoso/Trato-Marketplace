@@ -1,4 +1,5 @@
 import { ServerCrash } from "lucide-react";
+import { API_BASE } from "@/lib/api";
 
 export function ApiOffline({ detail }: { detail?: string }) {
   return (
@@ -8,13 +9,13 @@ export function ApiOffline({ detail }: { detail?: string }) {
       </div>
       <h1 className="mb-2 text-xl font-bold text-trato-ink">No pudimos conectar con la API</h1>
       <p className="text-sm text-trato-muted">
-        El frontend está funcionando, pero el backend no responde. Iniciá la API con:
+        El frontend está funcionando, pero el backend no responde. En local, iniciá la API con:
       </p>
       <pre className="mt-4 overflow-x-auto rounded-lg bg-trato-navy px-4 py-3 text-left text-xs text-trato-yellow">
         npm run dev:api
       </pre>
       <p className="mt-4 text-xs text-trato-muted">
-        API esperada en <code className="font-semibold">http://localhost:4000/api/v1</code>
+        API configurada en <code className="font-semibold">{API_BASE}</code>
         {detail ? ` · ${detail}` : ""}
       </p>
     </div>
