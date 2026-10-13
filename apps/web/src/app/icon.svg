@@ -1,4 +1,1 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64">
-<rect width="64" height="64" rx="14" fill="#ffe600"/>
-<text x="32" y="46" font-size="40" font-weight="800" text-anchor="middle" font-family="Segoe UI, system-ui, -apple-system, Arial, sans-serif" fill="#2d3277">T</text>
-</svg>
+<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64"><rect width="64" height="64" fill="#ffe600" rx="14"/><text x="32" y="46" fill="#2d3277" font-family="Segoe UI, system-ui, -apple-system, Arial, sans-serif" font-size="40" font-weight="800" text-anchor="middle">T</text></svg>
