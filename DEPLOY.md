@@ -155,6 +155,7 @@ Invoke-RestMethod "https://trato-api.onrender.com/api/v1/search?q=samsumg&perPag
 
 | Tema | Detalle |
 |---|---|
+| `/health` con `schema: "missing"` | La base de datos responde pero está vacía: aplicá el esquema y los datos (`npm run db:push` y `npm run seed`) con la **misma** `DATABASE_URL` que usa el deploy. Es el error `no such table: categories`. |
 | `NEXT_PUBLIC_*` se cocina en el build | Cambiar requiere redeploy; por eso esta en Settings, no hardcodeado. |
 | Primera request en Render free | cold start ~50 segundos; es plan free, no bug. |
 | Migraciones SQL versionadas | `npm run db:generate` genera `apps/api/drizzle/xxxx_*.sql`; el push se aplica con `turso db shell <db> < archivo.sql` o `drizzle-kit migrate`. |

@@ -16,6 +16,7 @@
     "db:push": "npm run db:push -w @trato/api",
     "db:generate": "npm run db:generate -w @trato/api",
     "db:studio": "npm run db:studio -w @trato/api",
+    "db:info": "npm run db:info -w @trato/api",
     "db:reset": "npm run db:reset -w @trato/api",
     "seed": "npm run seed -w @trato/api",
     "search:reindex": "npm run search:reindex -w @trato/api",
