@@ -145,9 +145,9 @@ Flujos clave:
 |---|---|---|---|
 | **Archivo local** (default) | `file:./db/trato.db` | vacío | SQLite en disco. Cero configuración, ideal para desarrollar. |
 | **Turso remoto** | `libsql://<db>-<org>.turso.io` (o `https://…`) | vacío | Cada query viaja al primario. `libsql://` usa WebSocket persistente; `https://` es HTTP puro (sin handshake, ideal serverless). |
-| **Réplica embebida** | `file:./db/replica.db` | `libsql://<db>-<org>.turso.io` | **Lecturas al disco local**; las escrituras se reenvían al primario. Requiere filesystem persistente (contenedor/VM), no serverless. |
+| **Réplica embebida** | `file:./db/replica.db` | `libsql://<db>-<org>.turso.io` | **Lecturas al disco local**; las escrituras se reenvían al primario. Requiere filesystem persistente (contenedor/VM), no serverless, y un archivo creado vacío por libSQL (no reutilices un `.db` plano de `db:push`). |
 
-`src/db/client.ts` resuelve el modo y crea el cliente; `src/config.ts` expone `databaseMode()`; `GET /health` reporta `databaseMode`, `replicaUrl` y la **latencia del probe** en milisegundos.
+`src/db/client.ts` resuelve el modo con reglas explícitas (`file:` solo = local, `libsql://`/`https://` solo = remoto, `file:` + `syncUrl` = réplica); `GET /health` reporta `databaseMode`, `replicaUrl`, la **latencia del probe**, `databaseUrlSource` y **si el esquema está aplicado** (`schema`, `schemaError`, `schemaHint`).
 
 ### Cómo se accede a los datos
 
@@ -163,6 +163,7 @@ Flujos clave:
 npm run db:push        # aplica el esquema al archivo local (desarrollo)
 npm run db:generate    # genera SQL versionado en apps/api/drizzle/0000_*.sql
 npm run db:studio      # explorador visual
+npm run db:info        # modo, URL, tablas y conteos de la DB configurada
 ```
 
 Para Turso, el DDL generado se aplica con la CLI oficial:
@@ -404,7 +405,7 @@ npm run start -w @trato/web          # Web (next start)
 |---|---|---|
 | `DATABASE_URL` | `file:./db/trato.db` | URL de libSQL: `file:…`, `libsql://…` o `https://…`. |
 | `TURSO_AUTH_TOKEN` | vacío | Token de Turso. Su ausencia implica modo archivo local. |
-| `TURSO_SYNC_URL` | vacío | Si está presente, la API corre en **modo réplica embebida**. |
+| `TURSO_SYNC_URL` | vacío | Solo si `DATABASE_URL` es `file:`: la API corre en **modo réplica embebida** (ignorada en modo remoto). |
 | `TURSO_SYNC_INTERVAL` | `60000` | Intervalo de sincronización de la réplica (ms). |
 | `JWT_SECRET` | valor de dev | **Cambiar en producción.** |
 | `JWT_EXPIRES_IN` | `7d` | Vigencia del token. |
@@ -433,6 +434,7 @@ npm run start -w @trato/web          # Web (next start)
 | `npm run db:push` | Aplica el esquema Drizzle a la base configurada. |
 | `npm run db:generate` | Genera SQL versionado en `apps/api/drizzle/`. |
 | `npm run db:studio` | Explorador visual de la base. |
+| `npm run db:info` | Inspecciona la DB configurada: modo, URL, tablas y conteos. |
 | `npm run db:reset` | Borra la base local, reaplica el esquema y siembra. |
 | `npm run seed` | Repuebla (determinista) y reindexa si hay Meilisearch. |
 | `npm run search:reindex` | Reconstruye el índice sin pasar por la API. |
@@ -446,7 +448,7 @@ Prefijo global: `/api/v1` · Documentación interactiva: **`/api/docs`** · Aute
 
 | Método | Ruta | Auth | Descripción |
 |---|---|---|---|
-| GET | `/health` | — | Estado de la DB (modo y latencia) y del motor de búsqueda. |
+| GET | `/health` | — | Estado de la DB (modo, latencia, fuente de la URL), **si el esquema está aplicado** (`schema`/`schemaHint`) y motor de búsqueda. |
 | POST | `/auth/register` | — | Alta de usuario; devuelve `{ token, user }`. |
 | POST | `/auth/login` | — | Login; devuelve `{ token, user }`. |
 | GET | `/auth/me` | Sí | Usuario de la sesión. |
@@ -587,6 +589,8 @@ Trampas reales encontradas durante la migración a Drizzle/libSQL, y cómo se re
 | Documentos no se indexaban (`index_primary_key_multiple_candidates_found`) | Meilisearch no puede inferir la PK con `categoryId`, `sellerId` e `id` | `addDocuments(docs, { primaryKey: "id" })` |
 | `samsumg` devolvía un cargador como primer resultado | Sin reglas de ranking personalizadas, el desempate era arbitrario | Añadir `soldQuantity:desc` y `rating:desc` a las `rankingRules` |
 | `prisma migrate dev` colgaba esperando input | Prompt interactivo de nombre de migración | Reemplazado por `drizzle-kit push --force` (determinista) y `db:generate` para versionar |
+| En Vercel, `/health` decía `database: ok` pero todo devolvía `no such table: categories` | `select 1` funciona en una base vacía: el probe de conexión no detecta esquema faltante | El health ahora consulta una tabla real (`categories`) y reporta `schema: missing` + `schemaError` + `schemaHint` |
+| Turso con `libsql://` remota quedaba en modo réplica y colgaba | `databaseMode()` interpretaba `TURSO_SYNC_URL` presente sin mirar la URL | La réplica exige `file:`: remoto gana si la URL no es archivo |
 
 ---
 
@@ -654,6 +658,8 @@ En el modo multi-service desaparece el cross-origin: el navegador llama a `/api/
 Los builds son standalone por workspace: cada `apps/*/package.json` tiene un `prebuild` que compila `@trato/shared`, y la raíz corre `prepare` durante `npm install`. No hay pasos manuales ni ficheros externos al repo.
 
 El paso a paso completo (crear la base en Turso, aplicar el DDL versionado, seed desde local contra la nube, levantar Meilisearch Cloud, configurar Render y Vercel, reindexar y verificar) está en **[DEPLOY.md](./DEPLOY.md)**.
+
+Después de cualquier problema de entorno en deploy, el diagnóstico es directo: `GET /api/v1/health` te dice, en JSON, si la DB responde (`database`), si tiene el esquema (`schema`), de dónde sacó la URL (`databaseUrlSource`) y en qué modo corre (`databaseMode`).
 
 ---
 
