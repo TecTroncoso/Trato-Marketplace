@@ -2,11 +2,15 @@ import { Controller, Get } from "@nestjs/common";
 import { ApiTags } from "@nestjs/swagger";
 import { DbService } from "../db/db.service";
 import { categories } from "../db/schema";
+import { SearchService } from "../modules/search/search.service";
 
 @ApiTags("health")
 @Controller("health")
 export class HealthController {
-  constructor(private readonly db: DbService) {}
+  constructor(
+    private readonly db: DbService,
+    private readonly search: SearchService,
+  ) {}
 
   @Get()
   async check() {
@@ -32,6 +36,8 @@ export class HealthController {
       }
     }
 
+    const searchFts = await this.search.isFtsEnabled().catch(() => false);
+
     return {
       status: database === "ok" && schema === "ok" ? "ok" : "degraded",
       service: "api",
@@ -47,6 +53,8 @@ export class HealthController {
         schema === "missing"
           ? "El esquema no está aplicado en esta base: ejecutá npm run db:push y npm run seed con la MISMA DATABASE_URL que usa este deploy."
           : null,
+      searchFts,
+      searchFtsHint: searchFts ? null : "Buscador en modo in-process sin FTS. Activalo con: npm run db:fts",
       timestamp: new Date().toISOString(),
     };
   }

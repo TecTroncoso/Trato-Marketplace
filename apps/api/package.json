@@ -10,9 +10,10 @@
     "db:generate": "drizzle-kit generate",
     "db:push": "drizzle-kit push --force",
     "db:studio": "drizzle-kit studio",
-    "db:reset": "node -e \"const fs=require('node:fs');fs.rmSync('./db',{recursive:true,force:true});fs.mkdirSync('./db',{recursive:true})\" && drizzle-kit push --force && tsx src/db/seed/seed.ts",
+    "db:reset": "node -e \"const fs=require('node:fs');fs.rmSync('./db',{recursive:true,force:true});fs.mkdirSync('./db',{recursive:true})\" && drizzle-kit push --force && tsx src/db/seed/seed.ts && tsx scripts/fts-setup.ts",
     "seed": "tsx src/db/seed/seed.ts",
-    "db:info": "tsx scripts/db-info.ts"
+    "db:info": "tsx scripts/db-info.ts",
+    "db:fts": "tsx scripts/fts-setup.ts"
   },
   "engines": {
     "node": ">=20"

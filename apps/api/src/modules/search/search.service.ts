@@ -4,7 +4,7 @@ import { DbService } from "../../db/db.service";
 import { CategoriesService } from "../categories/categories.service";
 import { products, users } from "../../db/schema";
 import { productSelection } from "../../db/queries/products";
-import { toProductSummary, type JoinedProductRow } from "../../db/mappers";
+import { categoryChain, toProductSummary, type JoinedProductRow } from "../../db/mappers";
 import { SearchQueryDto } from "./dto/search.dto";
 import type { FacetBucket, SearchFacets, SearchResult, SortValue } from "@trato/shared";
 
@@ -51,8 +51,63 @@ function sanitizeLikeTerm(value: string): string {
   return value.replace(/[%_]/g, "").trim();
 }
 
+const SEARCH_SYNONYMS: Record<string, string[]> = {
+  notebook: ["laptop", "laptops", "computadora"],
+  laptop: ["notebook", "notebooks", "computadora"],
+  computadora: ["laptop", "notebook"],
+  televisor: ["tv", "television", "smart"],
+  television: ["tv", "televisor"],
+  tv: ["televisor", "television", "smart"],
+  celular: ["smartphone", "telefono", "movil", "celulares"],
+  celulares: ["smartphone", "celular"],
+  smartphone: ["celular", "celulares", "telefono"],
+  telefono: ["celular", "smartphone", "celulares"],
+  zapatillas: ["calzado", "zapatos", "tenis", "sneakers"],
+  sneakers: ["zapatillas", "calzado"],
+  zapatos: ["zapatillas", "calzado"],
+  auriculares: ["cascos", "headphones", "audifonos", "auricular"],
+  auricular: ["auriculares", "cascos"],
+  cascos: ["parlante", "altavoz", "headphones"],
+  parlante: ["bocina", "altavoz", "parlantes", "speaker"],
+  parlantes: ["parlante", "bocina", "altavoz"],
+  heladera: ["refrigerador", "nevera", "frigorifico", "refri"],
+  refrigerador: ["heladera", "nevera"],
+  lavarropas: ["lavadora"],
+  lavadora: ["lavarropas"],
+  bicicleta: ["bici", "bike"],
+  bici: ["bicicleta"],
+  bocina: ["parlante", "altavoz"],
+  altavoz: ["parlante", "bocina"],
+  campera: ["chaqueta", "abrigo"],
+  chaqueta: ["campera", "abrigo"],
+  abrigo: ["campera", "chaqueta"],
+  buzo: ["sudadera", "hoodie"],
+  sudadera: ["buzo", "hoodie"],
+  mochila: ["mochilas", "backpack", "bolso"],
+  mochilas: ["mochila"],
+  silla: ["butaca", "sillon", "sofa"],
+  gym: ["fitness", "gimnasio", "ejercicio"],
+  fitness: ["gym", "gimnasio", "ejercicio"],
+  camara: ["fotografica", "foto", "fotografia"],
+  camaras: ["camara", "fotografica"],
+  consola: ["ps5", "xbox", "switch", "playstation"],
+};
+
+export function buildFtsMatch(query: string): string {
+  const groups = tokenize(query).map((token) => [token, ...(SEARCH_SYNONYMS[token] ?? [])]);
+  return groups
+    .map((group) => {
+      const terms = group.map((token) => `"${token.replace(/"/g, "")}"*`).join(" OR ");
+      return group.length > 1 ? `( ${terms} )` : terms;
+    })
+    .filter(Boolean)
+    .join(" AND ");
+}
+
 @Injectable()
 export class SearchService {
+  private ftsReady: Promise<boolean> | null = null;
+
   constructor(
     private readonly db: DbService,
     private readonly categories: CategoriesService,
@@ -63,9 +118,28 @@ export class SearchService {
     return this.searchLocally(dto, dto.page ?? 1, dto.perPage ?? 24, started);
   }
 
+  async isFtsEnabled(): Promise<boolean> {
+    return this.ftsAvailable();
+  }
+
   async suggest(query: string): Promise<string[]> {
     const trimmed = query.trim();
     if (trimmed.length < 2) return [];
+    const ftsMatch = buildFtsMatch(trimmed);
+    if (ftsMatch && (await this.ftsAvailable())) {
+      try {
+        const response = await this.db.client.execute({
+          sql: `select distinct title from products_fts where products_fts match ? limit 8`,
+          args: [ftsMatch],
+        });
+        const titles = Array.from(new Set(response.rows.map((row) => String(row.title))));
+        if (titles.length) {
+          return titles.slice(0, 6);
+        }
+      } catch {
+        void 0;
+      }
+    }
     const term = sanitizeLikeTerm(trimmed);
     if (!term) return [];
     const rows = await this.db.db
@@ -81,6 +155,33 @@ export class SearchService {
     return Array.from(new Set(rows.map((row) => row.title))).slice(0, 6);
   }
 
+  private async ftsAvailable(): Promise<boolean> {
+    if (!this.ftsReady) {
+      this.ftsReady = this.db.client
+        .execute("select product_id from products_fts limit 0")
+        .then(() => true)
+        .catch(() => false);
+    }
+    return this.ftsReady;
+  }
+
+  private async candidatesFromFts(query: string, condition: SQL | undefined): Promise<JoinedProductRow[] | null> {
+    const match = buildFtsMatch(query);
+    if (!match) return null;
+    if (!(await this.ftsAvailable())) return null;
+    try {
+      const idRows = await this.db.client.execute({
+        sql: `select product_id from products_fts where products_fts match ? limit 600`,
+        args: [match],
+      });
+      const ids = idRows.rows.map((row) => String(row.product_id)).filter(Boolean);
+      if (!ids.length) return [];
+      return productSelection(this.db.db).where(and(condition, inArray(products.id, ids)));
+    } catch {
+      return null;
+    }
+  }
+
   private async searchLocally(
     dto: SearchQueryDto,
     page: number,
@@ -88,10 +189,13 @@ export class SearchService {
     started: number,
   ): Promise<SearchResult> {
     const condition = await this.buildLocalWhere(dto);
-    const rows = await productSelection(this.db.db).where(condition).limit(600);
+    const query = dto.q?.trim() ?? "";
+    const ftsPool = query ? await this.candidatesFromFts(query, condition) : null;
+    const rows =
+      ftsPool && ftsPool.length ? ftsPool : await productSelection(this.db.db).where(condition).limit(600);
     const scored = rows
-      .map((row) => ({ row, score: this.scoreProduct(row, dto.q ?? "") }))
-      .filter((entry) => (dto.q?.trim() ? entry.score > 0 : true));
+      .map((row) => ({ row, score: this.scoreProduct(row, query) }))
+      .filter((entry) => (query ? entry.score > 0 : true));
     scored.sort((a, b) => this.compareEntries(a, b, (dto.sort ?? "relevance") as SortValue));
     const total = scored.length;
     const totalPages = Math.max(1, Math.ceil(total / perPage));
@@ -152,17 +256,25 @@ export class SearchService {
     const title = normalize(product.title);
     const words = title.split(/[^a-z0-9]+/).filter(Boolean);
     const brand = normalize(product.brand ?? "");
+    const categoryName = normalize(categoryChain(row).map((category) => category.name).join(" "));
     const description = normalize(product.description);
     let score = 0;
     let matchedAll = true;
     for (const token of tokens) {
+      const variants = [token, ...(SEARCH_SYNONYMS[token] ?? [])];
       let tokenScore = 0;
-      if (title.includes(token)) tokenScore = 12;
-      else if (words.some((word) => word.startsWith(token))) tokenScore = 8;
-      else if (words.some((word) => levenshtein(word, token) <= tolerance(token))) tokenScore = 6;
-      else if (brand.includes(token)) tokenScore = 5;
-      else if (brand.length > 0 && levenshtein(brand, token) <= tolerance(token)) tokenScore = 4;
-      else if (description.includes(token)) tokenScore = 2;
+      for (const variant of variants) {
+        const isOriginal = variant === token;
+        let variantScore = 0;
+        if (title.includes(variant)) variantScore = isOriginal ? 12 : 9;
+        else if (words.some((word) => word.startsWith(variant))) variantScore = isOriginal ? 8 : 6;
+        else if (words.some((word) => levenshtein(word, variant) <= tolerance(variant))) variantScore = 6;
+        else if (categoryName.includes(variant)) variantScore = isOriginal ? 7 : 5;
+        else if (brand.includes(variant)) variantScore = isOriginal ? 5 : 4;
+        else if (brand.length > 0 && levenshtein(brand, variant) <= tolerance(variant)) variantScore = 4;
+        else if (description.includes(variant)) variantScore = 2;
+        if (variantScore > tokenScore) tokenScore = variantScore;
+      }
       if (tokenScore === 0) matchedAll = false;
       score += tokenScore;
     }

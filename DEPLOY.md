@@ -45,6 +45,7 @@ Puede correrse desde tu máquina; el `.env` local apunta a la nube solo durante 
 # en apps/api/.env (temporal): DATABASE_URL=libsql://...turso.io  TURSO_AUTH_TOKEN=...
 npm run db:push
 npm run seed
+npm run db:fts        # crea el índice FTS5 y sus triggers en Turso
 npm run db:info        # verifica: mode remote + tablas + conteos
 ```
 
@@ -124,7 +125,7 @@ El blueprint `render.yaml` ya tiene los servicios (`trato-api` y `trato-web`, es
 | `WEB_ORIGIN` | `https://<tu-web>.vercel.app` (CORS cross-origin) |
 | `NEXT_PUBLIC_API_URL` (web en Vercel) | `https://trato-api.onrender.com/api/v1` — se cocina en build |
 
-4. Health check: `GET https://trato-api.onrender.com/api/v1/health` debe devolver `database: ok`, `databaseMode: remote`, `schema: ok`.
+- Health check: `GET https://trato-api.onrender.com/api/v1/health` debe devolver `database: ok`, `databaseMode: remote`, `schema: ok`, `searchFts: true`.
 
 Render asigna `PORT` y `main.ts` lo lee via `process.env.PORT`.
 

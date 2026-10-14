@@ -59,7 +59,7 @@ Trato cubre el ciclo completo de un marketplace de dos lados.
 - Respuesta a preguntas de compradores desde la propia ficha del producto.
 
 **Plataforma**
-- **Buscador in-process**: filtra en SQL, puntúa en memoria (título > prefijo > Levenshtein > marca > descripción, con boost por ventas, rating y envío gratis) y arma facetas al vuelo. Sin servicio externo que sincronizar.
+- **Buscador in-process con FTS5:** la consulta se expande con sinónimos en español y un pool de candidatos viene de una tabla virtual full-text que vive en la misma base, se mantiene con triggers y se crea con `npm run db:fts`. Un scorer local desempata por título, Levenshtein tolerante, categoría, marca, ventas y rating; si la tabla falta o no hay match, cae al scan de SQL sin romper ni cambiar la respuesta.
 - Acceso a datos con **Drizzle ORM** sobre **libSQL**, con tres modos de conexión: archivo local, Turso remoto o **réplica embebida**.
 - Seed determinista que genera un catálogo realista en español de Argentina.
 - Tipos y contratos compartidos entre API y web, validación en el borde y OpenAPI generado.
@@ -87,7 +87,7 @@ Trato cubre el ciclo completo de un marketplace de dos lados.
 
 - **Drizzle en lugar de Prisma.** SQL-first: permite escribir **un `SELECT` con joins** para cada listado (Prisma emitía una query por nivel de `include`, es decir 3-4 round trips por ficha de producto contra una base remota). Además, Drizzle no impone un motor de consultas propio: podés bajar a SQL cuando hace falta, como en el recálculo de reputación o en el `UPDATE ... SET stock = stock - n` atómico del checkout.
 - **libSQL/Turso en lugar de PostgreSQL.** El marketplace es de lectura intensiva y multi-región: la **réplica embebida** da lecturas locales y las escrituras van al primario. Sin Docker obligatorio para desarrollar (archivo local) y sin perder el camino a producción distribuida.
-- **Buscador in-process en lugar de un servicio externo.** La búsqueda vive dentro de la API (candidatos por SQL + scoring con Levenshtein y facetas en memoria). Ventajas: una pieza menos que desplegar, nada que sincronizar, costo cero y latencias de milisegundos para catálogos medianos. El trade-off está declarado abajo en [Limitaciones](#limitaciones-conocidas).
+- **Buscador in-process con FTS5.** La búsqueda corre dentro de la API: una **tabla virtual FTS5** vive *en la misma base* (trabaja con prefijos y diacríticos) entrega los candidatos, y un scorer local en memoria aplica la relevancia (título > prefijo > Levenshtein > categoría > marca > descripción) más boosts por ventas, rating y envío gratis. Sin servicios extra, sin índices espejos, costo cero.
 - **REST en lugar de GraphQL.** El catálogo se beneficia del caché HTTP y de URLs estables para SEO; GraphQL añadiría una capa de resolución que aquí no paga su costo.
 - **Imágenes generadas (SVG).** El seed genera ~1.200 SVG con gradientes y categorías, de modo que la demo funciona **offline** y sin depender de CDNs externos.
 - **Dinero como enteros.** Todos los precios son `integer` en pesos argentinos, sin decimales: cero errores de punto flotante.
@@ -186,9 +186,9 @@ Estado de cada técnica en este repositorio.
 | Batch atómico en checkout (1 round trip para N escrituras) | `orders.service.ts` |
 | Índices compuestos alineados a las queries calientes | `schema.ts`: `(status, category_id, sold_quantity)`, `(status, created_at)`, `(status, rating)`, `(status, price)`, `(user_id, created_at)`, `(product_id, created_at)` |
 | Escrituras como expresiones SQL atómicas (sin read-modify-write) | `sql\`${products.stock} - ${qty}\`` en checkout |
-| **Sin servicio de búsqueda externo** (nada de red extra ni índice espejo) | `SearchService` in-process |
+| **Sin servicio de búsqueda externo** (índice FTS5 en la misma base via triggers) | `SearchService` + `scripts/fts-setup.ts` |
 | Cliente único por proceso (nunca por request) | `DbService` singleton por DI de Nest |
-| Probe de latencia observable | `GET /health` → `latencyMs` |
+| Probe de latencia observable | `GET /health` → `latencyMs`, `searchFts` |
 | Protocolo elegible según despliegue | `libsql://` (WS, servidor long-running) vs `https://` (HTTP, serverless) |
 
 **Pendiente (documentado como próximo paso)**
@@ -200,27 +200,30 @@ Estado de cada técnica en este repositorio.
 | Keyset pagination en lugar de `skip` en páginas profundas | Evita recorrer filas descartadas. |
 | Desnormalizar `sellerName`/`sellerStatus`/`location` en `products` | Elimina el join con `users` en listados. |
 | Caché de la home y de facetas (Redis o caché en proceso) | Corta las 8 queries del payload de home. |
-| FTS5 en Turso si el catálogo crece a decenas de miles | Índice invertido dentro de la misma base, sin servicios extra. |
 
 ---
 
 ## Diseño del buscador
 
-El buscador es **in-process**: vive dentro de `SearchService` (`apps/api/src/modules/search/`) y no hay índice espejo ni servicio externo. Funciona así, en un único request:
+El buscador corre **in-process**, dentro de `SearchService`. No hay ningún servicio externo que desplegar, pero sí un **índice FTS5 que vive en la misma base** (y en Turso replica los triggers que lo alimentan):
 
-1. **Candidatos por SQL.** Construye un `WHERE` con Drizzle (categoría y descendientes, rango de precio, condición, marca, ubicación, stock) sobre `productSelection()` — un join que ya trae producto, vendedor y cadena de categorías. Techo de 600 candidatos.
-2. **Scoring en memoria** por token de la consulta: coincidencia exacta en título (12) > prefijo de palabra (8) > **Levenshtein dentro de tolerancia** (6; 1 edición para palabras de 4-6 letras, 2 para 7+) > marca (5) > descripción (2). Ajustes: penalización cuando algún token no matchea, boost por ventas (hasta 2 puntos), rating (hasta 0.5) y envío gratis (+0.3).
-3. **Orden.** `relevance` (score), `price_asc`, `price_desc`, `sold_desc`, `rating_desc`, `newest`.
-4. **Facetas al vuelo.** `brands`, `conditions` y `locations` con contadores, calculadas sobre el resultado puntuado.
-5. **Sugerencias.** `LIKE` sobre título y marca (máx. 6 títulos únicos).
+**Pipeline por consulta:**
+
+1. **FTS5 como pre-filtrado de candidatos.** Una tabla virtual `products_fts(product_id, title, brand, description, category_name)` vive en la misma base libSQL/Turso. Se construye con `npm run db:fts` usando el tokenizer `unicode61 remove_diacritics 2` (soporta acentos: `camara`⇔`cámara`, prefijos: `note*`). Se actualiza sola con triggers (`INSERT/UPDATE/DELETE` sobre `products`).
+
+2. **Expansión por sinónimos en español.** La consulta se expande con un diccionario curado (`SEARCH_SYNONYMS` en `search.service.ts`): `televisor`→TV/televisión, `celular`→smartphone/telefono, `notebook`→laptop/computadora, `camara`→fotográfica, `consola`→ps5/xbox/switch, etc. Cada token y sus sinónimos se unen con `OR` dentro de llaves y los grupos entre sí con `AND` explícito (FTS5 no soporta `( a OR b ) c` con AND implícito).
+
+3. **Candidatos vía Drizzle.** Cada `product_id` del FTS se cruza con `productSelection(...)` y los filtros del request (precio, ubicación, condición, marca, envío, stock). Si la tabla FTS faltara (fresh DB antes de `db:fts`), o el FTS no diera nada (typo duro), o no haya query, el sistema cae a un escaneo de hasta 600 productos con el mismo filtro — **nunca cambia la respuesta, solo el costo**.
+
+4. **Scoring en memoria** (el `sort=relevance`): por cada token se mira título (12), prefijo de palabra (8), Levenshtein dentro de tolerancia (6; 1 edicion para 4-6 letras, 2 para 7+), categoría (7), marca (5) o descripción (2), con variantes por sinónimo con algo menos de peso; luego boosts por ventas, rating y envío gratis. Si ningún token matcheó nada hay una penalización (`-6`) que lo saca del resultado.
+
+5. **Facetas al vuelo.** `brands`, `conditions` y `locations` con contadores calculados sobre el resultado puntuado.
+
+6. **Sugerencias.** Usa FTS si está activo; si no, `LIKE` sobre título/marca.
 
 **Contrato.** `GET /search` acepta `q`, `category`, `minPrice`, `maxPrice`, `condition`, `brand[]`, `location`, `freeShipping`, `inStock`, `sort` y paginación; devuelve hits, totales, facetas y `tookMs`.
 
-**Verificado:** `samsumg` → 21 resultados con Samsung ordenados por relevancia y popularidad en **~8-78 ms**; `ipone` → iPhones; sin query, la misma maquinaria sirve listados por categoría y por orden.
-
----
-
-## Estructura del repositorio
+**Verificado local y en Turso:** `camara` → 30 resultados, top Canon EOS R50 (via `category_name`); `televisor` → 46 Smart TVs por sinónimo; `notebook` → Notebooks; `samsumg` → 21 Samsung con rescate de typo; `heladera no frost` → las 2 multi-token; tiempos 2-15 ms en FTS y 40-55 ms en rescate.
 
 ```
 Trato MarketPlace/
@@ -237,6 +240,7 @@ Trato MarketPlace/
    │  ├─ db/                    # archivo local de libSQL (gitignored)
    │  ├─ drizzle/               # migraciones SQL versionadas
    │  ├─ scripts/db-info.ts     # inspección de la base configurada
+   │  ├─ scripts/fts-setup.ts   # crea/refresh de la tabla virtual FTS5 + triggers
    │  └─ src/
    │     ├─ main.ts             # bootstrap, prefijo /api/v1, Swagger, pipes, CORS
    │     ├─ config.ts           # env tipado + databaseMode()
@@ -587,7 +591,7 @@ Trampas reales encontradas durante la construcción, y cómo se resolvieron.
 - Sin mensajería directa comprador-vendedor (solo preguntas públicas).
 - Sin tests automatizados todavía (ver Roadmap).
 - Las opiniones no verifican una compra previa.
-- **El buscador in-process** es excelente hasta catálogos de miles de productos: sin typos semánticos (no hay stemming ni sinónimos), con techo de 600 candidatos por consulta y sin búsqueda multi-campo ponderada del lado del servidor. Para decenas de miles de productos, el camino es **FTS5 en Turso** (índice invertido dentro de la misma base) antes de volver a un motor externo.
+- **El buscador in-process** ya usa un índice FTS5 (en la misma base) con expansión de sinónimos en español y un Levenshtein tolerante como rescate. Sabiendo eso, aún tiene límites: el diccionario de sinónimos es curado manualmente (no aprende), el FTS5 no hace stemming morfológico, y el pool techo es 600 candidatos. Para catálogos de cientos de miles, la siguiente fase es mejorar el FTS5 con otra tokenizer, campos ponderados por bm25 o agregar un índice vectorial de Turso.
 - Escritor único en el primario de Turso: picos de checkout serializan.
 - Warnings cosméticos de Next (`metadataBase`).
 
@@ -601,7 +605,7 @@ Trampas reales encontradas durante la construcción, y cómo se resolvieron.
 - Subida real de imágenes (S3/MinIO) y rate limiting.
 
 **Mediano plazo**
-- **FTS5 en Turso** como índice del buscador cuando el catálogo crezca: `MATCH` para candidatos + el scorer actual para relevancia, sin servicios extra.
+- Buscador in-process con **FTS5** (ya implementado via `npm run db:fts`): candidatos por MATCH + scorer con tolerancia, sinónimos e idioma.
 - Pasarela de pago real (MercadoPago) con webhooks y estados de pago.
 - Mensajería comprador-vendedor y notificaciones en tiempo real.
 - Dockerfiles, CI/CD con `drizzle-kit migrate` automático.
