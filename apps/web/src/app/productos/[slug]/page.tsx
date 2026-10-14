@@ -34,7 +34,7 @@ const EMPTY_REVIEWS: ReviewsPayload = {
 export async function generateMetadata({ params }: { params: Promise<{ slug: string }> }): Promise<Metadata> {
   const { slug } = await params;
   try {
-    const product = await serverFetch<ProductDetail>(`/products/${encodeURIComponent(slug)}`);
+    const product = await serverFetch<ProductDetail>(`/products/${encodeURIComponent(slug)}`, { revalidate: 60 });
     return {
       title: product.title,
       description: product.description.slice(0, 155),
@@ -54,7 +54,7 @@ export default async function ProductPage({ params }: { params: Promise<{ slug: 
 
   let product: ProductDetail;
   try {
-    product = await serverFetch<ProductDetail>(`/products/${encodeURIComponent(slug)}`);
+    product = await serverFetch<ProductDetail>(`/products/${encodeURIComponent(slug)}`, { revalidate: 60 });
   } catch (error) {
     if (error instanceof ApiError && error.status === 404) {
       notFound();
@@ -67,11 +67,11 @@ export default async function ProductPage({ params }: { params: Promise<{ slug: 
   }
 
   const [reviews, questions, related, sellerProducts, category] = await Promise.all([
-    serverFetch<ReviewsPayload>(`/products/${product.id}/reviews`).catch(() => EMPTY_REVIEWS),
-    serverFetch<Question[]>(`/products/${product.id}/questions`).catch(() => [] as Question[]),
-    serverFetch<ProductSummary[]>(`/products/${product.id}/related`).catch(() => [] as ProductSummary[]),
-    serverFetch<ProductSummary[]>(`/sellers/${product.seller.id}/products`).catch(() => [] as ProductSummary[]),
-    serverFetch<CategoryNode>(`/categories/${product.categorySlug}`).catch(() => null),
+    serverFetch<ReviewsPayload>(`/products/${product.id}/reviews`, { revalidate: 30 }).catch(() => EMPTY_REVIEWS),
+    serverFetch<Question[]>(`/products/${product.id}/questions`, { revalidate: 30 }).catch(() => [] as Question[]),
+    serverFetch<ProductSummary[]>(`/products/${product.id}/related`, { revalidate: 120 }).catch(() => [] as ProductSummary[]),
+    serverFetch<ProductSummary[]>(`/sellers/${product.seller.id}/products`, { revalidate: 120 }).catch(() => [] as ProductSummary[]),
+    serverFetch<CategoryNode>(`/categories/${product.categorySlug}`, { revalidate: 300 }).catch(() => null),
   ]);
 
   const crumbs = [

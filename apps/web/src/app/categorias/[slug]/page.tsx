@@ -25,7 +25,7 @@ interface CategoryNode {
 }
 
 async function loadCategory(slug: string): Promise<CategoryNode> {
-  return serverFetch<CategoryNode>(`/categories/${slug}`);
+  return serverFetch<CategoryNode>(`/categories/${slug}`, { revalidate: 300 });
 }
 
 export async function generateMetadata({ params }: { params: Promise<{ slug: string }> }): Promise<Metadata> {
@@ -60,6 +60,7 @@ export default async function CategoryPage({
       loadCategory(slug),
       serverFetch<SearchResult>(
         `/search${buildQuery(toQueryWithCategory(searchState, slug))}`,
+        { revalidate: 30 },
       ),
     ]);
   } catch (error) {

@@ -18,10 +18,12 @@ export const metadata: Metadata = {
   title: "Trato | Comprá y vendé en el marketplace",
 };
 
+export const dynamic = "force-dynamic";
+
 export default async function HomePage() {
   let home: HomePayload;
   try {
-    home = await serverFetch<HomePayload>("/home");
+    home = await serverFetch<HomePayload>("/home", { revalidate: 60 });
   } catch (error) {
     return (
       <div className="px-3 py-10">

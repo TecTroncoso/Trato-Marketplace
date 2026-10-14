@@ -196,7 +196,7 @@ Estado de cada técnica en este repositorio.
 | Técnica | Impacto esperado |
 |---|---|
 | `select` recortado para listados (hoy se traen `description` y `attributes` completos) | Menos egress y CPU en cada listado. |
-| ISR/`revalidate` en las páginas de catálogo (hoy `cache: "no-store"`) | Menos requests a la API y a la base; multiplica el efecto de la réplica. |
+| ISR/`revalidate` en las páginas de catálogo | **Implementado**: `revalidate` por fetch — home 60 s, búsqueda 30 s, ficha de producto 60 s — probado con el modo "API caída" (siguen sirviendo desde la capa de Next) |
 | Keyset pagination en lugar de `skip` en páginas profundas | Evita recorrer filas descartadas. |
 | Desnormalizar `sellerName`/`sellerStatus`/`location` en `products` | Elimina el join con `users` en listados. |
 | Caché de la home y de facetas (Redis o caché en proceso) | Corta las 8 queries del payload de home. |

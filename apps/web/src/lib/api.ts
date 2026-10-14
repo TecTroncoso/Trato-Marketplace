@@ -32,8 +32,11 @@ async function parse<T>(response: Response): Promise<T> {
   return data as T;
 }
 
-export async function serverFetch<T>(path: string): Promise<T> {
-  const response = await fetch(`${API_BASE}${path}`, { cache: "no-store" });
+export async function serverFetch<T>(path: string, options: { revalidate?: number | false } = {}): Promise<T> {
+  const init: RequestInit = options.revalidate
+    ? { next: { revalidate: options.revalidate } }
+    : { cache: "no-store" };
+  const response = await fetch(`${API_BASE}${path}`, init as RequestInit);
   return parse<T>(response);
 }
 

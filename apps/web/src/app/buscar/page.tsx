@@ -28,7 +28,7 @@ export default async function SearchPage({
 
   let result: SearchResult;
   try {
-    result = await serverFetch<SearchResult>(`/search${buildQuery(toApiQuery(params, 24))}`);
+    result = await serverFetch<SearchResult>(`/search${buildQuery(toApiQuery(params, 24))}`, { revalidate: 30 });
   } catch (error) {
     return (
       <div className="px-3 py-10">
