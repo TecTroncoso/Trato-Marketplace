@@ -4,17 +4,13 @@ import { DbService } from "../../db/db.service";
 import { categories, products, users } from "../../db/schema";
 import { productSelection } from "../../db/queries/products";
 import { toProductDetail, toProductSummary, type JoinedProductRow } from "../../db/mappers";
-import { SearchService } from "../search/search.service";
 import { CreateProductDto, UpdateProductDto } from "./dto/product.dto";
 import { slugify } from "../../common/slugify";
 import type { ProductDetail, ProductSummary } from "@trato/shared";
 
 @Injectable()
 export class ProductsService {
-  constructor(
-    private readonly db: DbService,
-    private readonly search: SearchService,
-  ) {}
+  constructor(private readonly db: DbService) {}
 
   async findByParam(param: string): Promise<ProductDetail> {
     const [row] = await productSelection(this.db.db)
@@ -66,7 +62,6 @@ export class ProductsService {
       .returning({ id: products.id });
 
     const row = await this.findRow(created.id);
-    await this.search.indexProduct(row);
     return toProductDetail(row);
   }
 
@@ -111,7 +106,6 @@ export class ProductsService {
       .where(eq(products.id, productId));
 
     const row = await this.findRow(productId);
-    await this.search.indexProduct(row);
     return toProductDetail(row);
   }
 
@@ -129,11 +123,7 @@ export class ProductsService {
     }
     const status = product.status === "active" ? "paused" : "active";
     await this.db.db.update(products).set({ status }).where(eq(products.id, productId));
-    if (status === "active") {
-      await this.search.indexProduct(await this.findRow(productId));
-    } else {
-      await this.search.removeProduct(productId);
-    }
+    await this.db.db.update(products).set({ status }).where(eq(products.id, productId));
     await this.db.sync();
     return { id: productId, status };
   }

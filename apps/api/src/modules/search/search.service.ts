@@ -1,37 +1,12 @@
-import { Injectable, Logger } from "@nestjs/common";
+import { Injectable } from "@nestjs/common";
 import { and, eq, gt, gte, inArray, like, lte, or, sql, type SQL } from "drizzle-orm";
 import { DbService } from "../../db/db.service";
 import { CategoriesService } from "../categories/categories.service";
 import { products, users } from "../../db/schema";
-import { activeProductSelection, productSelection } from "../../db/queries/products";
-import { installmentFor, toProductSummary, type JoinedProductRow } from "../../db/mappers";
-import { ENV } from "../../config";
+import { productSelection } from "../../db/queries/products";
+import { toProductSummary, type JoinedProductRow } from "../../db/mappers";
 import { SearchQueryDto } from "./dto/search.dto";
-import {
-  FACET_ATTRIBUTES,
-  FILTERABLE_ATTRIBUTES,
-  ProductDocument,
-  RANKING_RULES,
-  SEARCHABLE_ATTRIBUTES,
-  SEARCH_SYNONYMS,
-  SORTABLE_ATTRIBUTES,
-  buildProductDocument,
-} from "./product-document";
 import type { FacetBucket, SearchFacets, SearchResult, SortValue } from "@trato/shared";
-
-export type SearchEngine = "meilisearch" | "local";
-
-type MeilisearchModule = typeof import("meilisearch", { with: { "resolution-mode": "import" } });
-type MeilisearchInstance = InstanceType<MeilisearchModule["Meilisearch"]>;
-
-const SORT_MAP: Record<SortValue, string[]> = {
-  relevance: [],
-  price_asc: ["price:asc"],
-  price_desc: ["price:desc"],
-  sold_desc: ["soldQuantity:desc"],
-  rating_desc: ["rating:desc"],
-  newest: ["createdAt:desc"],
-};
 
 function normalize(value: string): string {
   return value
@@ -72,160 +47,25 @@ function levenshtein(a: string, b: string): number {
   return matrix[b.length][a.length];
 }
 
-function escapeFilterValue(value: string): string {
-  return value.replace(/["\\]/g, "");
-}
-
-function toBuckets(distribution: Record<string, number> | undefined, limit = 12): FacetBucket[] {
-  if (!distribution) return [];
-  return Object.entries(distribution)
-    .map(([value, count]) => ({ value, count }))
-    .sort((a, b) => b.count - a.count)
-    .slice(0, limit);
-}
-
 function sanitizeLikeTerm(value: string): string {
   return value.replace(/[%_]/g, "").trim();
 }
 
 @Injectable()
 export class SearchService {
-  private readonly logger = new Logger("SearchService");
-  private readonly indexName = "products";
-  private client: MeilisearchInstance | null = null;
-  private clientLoading: Promise<void> | null = null;
-  private currentEngine: SearchEngine = "local";
-  private healthy = false;
-  private lastHealthCheck = 0;
-
   constructor(
     private readonly db: DbService,
     private readonly categories: CategoriesService,
   ) {}
 
-  get engine(): SearchEngine {
-    return this.currentEngine;
-  }
-
-  private async ensureClient(): Promise<MeilisearchInstance | null> {
-    if (this.client) return this.client;
-    if (!ENV.meilisearchUrl) return null;
-    if (!this.clientLoading) {
-      this.clientLoading = (async () => {
-        try {
-          const { Meilisearch } = await import("meilisearch");
-          this.client = new Meilisearch({
-            host: ENV.meilisearchUrl,
-            apiKey: ENV.meilisearchMasterKey || undefined,
-          });
-        } catch (error) {
-          this.logger.warn(`No se pudo inicializar Meilisearch: ${(error as Error).message}`);
-          this.client = null;
-        }
-      })();
-    }
-    await this.clientLoading;
-    return this.client;
-  }
-
-  async configureIndex(): Promise<SearchEngine> {
-    const client = await this.ensureClient();
-    if (!client) return "local";
-    try {
-      const index = client.index(this.indexName);
-      await index.updateFilterableAttributes(FILTERABLE_ATTRIBUTES);
-      await index.updateSortableAttributes(SORTABLE_ATTRIBUTES);
-      await index.updateSearchableAttributes(SEARCHABLE_ATTRIBUTES);
-      await index.updateSynonyms(SEARCH_SYNONYMS);
-      await index.updateRankingRules(RANKING_RULES);
-      await client.health();
-      this.healthy = true;
-      this.currentEngine = "meilisearch";
-      this.lastHealthCheck = Date.now();
-      return "meilisearch";
-    } catch (error) {
-      this.logger.warn(
-        `Meilisearch no disponible (${(error as Error).message}); se usa el buscador local tolerante a errores.`,
-      );
-      this.currentEngine = "local";
-      return "local";
-    }
-  }
-
-  async reindexAll(): Promise<{ indexed: number; engine: SearchEngine; message?: string }> {
-    const client = await this.ensureClient();
-    if (!client || !(await this.ping())) {
-      return {
-        indexed: 0,
-        engine: "local",
-        message: "Meilisearch no responde: la búsqueda sigue activa en modo local",
-      };
-    }
-    const rows = await activeProductSelection(this.db.db);
-    const documents = rows.map(buildProductDocument);
-    const index = client.index(this.indexName);
-    await index.deleteAllDocuments();
-    for (let i = 0; i < documents.length; i += 200) {
-      await index.addDocuments(documents.slice(i, i + 200), { primaryKey: "id" });
-    }
-    await this.configureIndex();
-    this.logger.log(`Índice reconstruido con ${documents.length} documentos`);
-    return { indexed: documents.length, engine: "meilisearch" };
-  }
-
-  async indexProduct(row: JoinedProductRow): Promise<void> {
-    const client = await this.ensureClient();
-    if (!client || !(await this.checkHealth())) return;
-    try {
-      await client.index(this.indexName).addDocuments([buildProductDocument(row)], { primaryKey: "id" });
-    } catch (error) {
-      this.logger.warn(`No se pudo indexar ${row.product.id}: ${(error as Error).message}`);
-    }
-  }
-
-  async removeProduct(productId: string): Promise<void> {
-    const client = await this.ensureClient();
-    if (!client || !(await this.checkHealth())) return;
-    try {
-      await client.index(this.indexName).deleteDocument(productId);
-    } catch (error) {
-      this.logger.warn(`No se pudo eliminar ${productId} del índice: ${(error as Error).message}`);
-    }
-  }
-
   async search(dto: SearchQueryDto): Promise<SearchResult> {
     const started = Date.now();
-    const page = dto.page ?? 1;
-    const perPage = dto.perPage ?? 24;
-    const client = await this.ensureClient();
-    if (client && (await this.checkHealth())) {
-      try {
-        return await this.searchWithMeilisearch(client, dto, page, perPage, started);
-      } catch (error) {
-        this.logger.warn(`Fallo Meilisearch, usando buscador local: ${(error as Error).message}`);
-        this.healthy = false;
-        this.currentEngine = "local";
-      }
-    }
-    return this.searchLocally(dto, page, perPage, started);
+    return this.searchLocally(dto, dto.page ?? 1, dto.perPage ?? 24, started);
   }
 
   async suggest(query: string): Promise<string[]> {
     const trimmed = query.trim();
     if (trimmed.length < 2) return [];
-    const client = await this.ensureClient();
-    if (client && (await this.checkHealth())) {
-      try {
-        const response = await client.index(this.indexName).search(trimmed, {
-          limit: 6,
-          attributesToRetrieve: ["title"],
-        });
-        const titles = (response.hits as unknown as ProductDocument[]).map((hit) => hit.title);
-        return Array.from(new Set(titles)).slice(0, 6);
-      } catch {
-        void 0;
-      }
-    }
     const term = sanitizeLikeTerm(trimmed);
     if (!term) return [];
     const rows = await this.db.db
@@ -239,84 +79,6 @@ export class SearchService {
       )
       .limit(6);
     return Array.from(new Set(rows.map((row) => row.title))).slice(0, 6);
-  }
-
-  private async ping(): Promise<boolean> {
-    const client = await this.ensureClient();
-    if (!client) return false;
-    try {
-      await client.health();
-      return true;
-    } catch {
-      return false;
-    }
-  }
-
-  private async checkHealth(): Promise<boolean> {
-    const client = await this.ensureClient();
-    if (!client) {
-      this.currentEngine = "local";
-      return false;
-    }
-    const now = Date.now();
-    if (this.healthy && now - this.lastHealthCheck < 30_000) {
-      return true;
-    }
-    try {
-      await client.health();
-      this.healthy = true;
-      this.currentEngine = "meilisearch";
-    } catch {
-      this.healthy = false;
-      this.currentEngine = "local";
-    }
-    this.lastHealthCheck = now;
-    return this.healthy;
-  }
-
-  private async searchWithMeilisearch(
-    client: MeilisearchInstance,
-    dto: SearchQueryDto,
-    page: number,
-    perPage: number,
-    started: number,
-  ): Promise<SearchResult> {
-    const index = client.index(this.indexName);
-    const filters: string[] = [];
-    if (dto.category) filters.push(`categoryPath = "${escapeFilterValue(dto.category)}"`);
-    if (dto.minPrice != null) filters.push(`price >= ${dto.minPrice}`);
-    if (dto.maxPrice != null) filters.push(`price <= ${dto.maxPrice}`);
-    if (dto.condition) filters.push(`condition = "${escapeFilterValue(dto.condition)}"`);
-    if (dto.freeShipping) filters.push("freeShipping = true");
-    if (dto.location) filters.push(`location = "${escapeFilterValue(dto.location)}"`);
-    if (dto.inStock) filters.push("stock > 0");
-    if (dto.brand?.length) {
-      filters.push(`brand IN [${dto.brand.map((brand) => `"${escapeFilterValue(brand)}"`).join(", ")}]`);
-    }
-    const sort = SORT_MAP[(dto.sort ?? "relevance") as SortValue];
-    const response = await index.search(dto.q ?? "", {
-      filter: filters.length ? filters : undefined,
-      sort: sort.length ? sort : undefined,
-      facets: FACET_ATTRIBUTES,
-      page,
-      hitsPerPage: perPage,
-    });
-    const documents = response.hits as unknown as ProductDocument[];
-    const facets: SearchFacets = {
-      brands: toBuckets(response.facetDistribution?.brand),
-      conditions: toBuckets(response.facetDistribution?.condition),
-      locations: toBuckets(response.facetDistribution?.location),
-    };
-    return {
-      hits: documents.map((document) => this.documentToSummary(document)),
-      total: response.totalHits ?? response.estimatedTotalHits ?? documents.length,
-      page: response.page ?? page,
-      perPage,
-      totalPages: response.totalPages ?? 1,
-      facets,
-      engine: "meilisearch",
-      tookMs: Date.now() - started,
-    };
   }
 
   private async searchLocally(
@@ -342,7 +104,6 @@ export class SearchService {
       perPage,
       totalPages,
       facets: this.buildLocalFacets(scored.map((entry) => entry.row)),
-      engine: "local",
       tookMs: Date.now() - started,
     };
   }
@@ -428,40 +189,6 @@ export class SearchService {
       brands: count(rows.map((row) => row.product.brand)),
       conditions: count(rows.map((row) => row.product.condition)),
       locations: count(rows.map((row) => row.seller.location)),
-    };
-  }
-
-  private documentToSummary(document: ProductDocument) {
-    return {
-      id: document.id,
-      slug: document.slug,
-      title: document.title,
-      price: document.price,
-      originalPrice: document.originalPrice,
-      discount: document.discount,
-      condition: document.condition,
-      freeShipping: document.freeShipping,
-      stock: document.stock,
-      soldQuantity: document.soldQuantity,
-      rating: document.rating,
-      reviewsCount: document.reviewsCount,
-      images: document.images,
-      brand: document.brand,
-      location: document.location,
-      categoryId: document.categoryId,
-      categorySlug: document.categorySlug,
-      categoryPath: document.categoryPath,
-      installments: installmentFor(document.price),
-      seller: {
-        id: document.sellerId,
-        name: document.sellerName,
-        status: document.sellerStatus,
-        sales: document.sellerSales,
-        rating: document.sellerRating,
-        location: document.location,
-        memberSince: null,
-        avatar: null,
-      },
     };
   }
 }

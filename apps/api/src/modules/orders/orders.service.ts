@@ -3,8 +3,6 @@ import { and, desc, eq, inArray, sql } from "drizzle-orm";
 import { DbService } from "../../db/db.service";
 import { orderItems, orders, products, users } from "../../db/schema";
 import { productSelection } from "../../db/queries/products";
-import { toProductSummary } from "../../db/mappers";
-import { SearchService } from "../search/search.service";
 import { CheckoutDto, UpdateOrderStatusDto } from "./dto/order.dto";
 import type { OrderItemRow, OrderRow } from "../../db/schema";
 import type { Order as SharedOrder, OrderItem as SharedOrderItem } from "@trato/shared";
@@ -18,10 +16,7 @@ const PAYMENT_LABELS: Record<string, string> = {
 
 @Injectable()
 export class OrdersService {
-  constructor(
-    private readonly db: DbService,
-    private readonly search: SearchService,
-  ) {}
+  constructor(private readonly db: DbService) {}
 
   async checkout(userId: string, dto: CheckoutDto): Promise<SharedOrder> {
     const items = dto.items ?? [];
@@ -93,9 +88,6 @@ export class OrdersService {
     ]);
 
     await this.db.sync();
-
-    const refreshed = await productSelection(this.db.db).where(inArray(products.id, productIds));
-    await Promise.all(refreshed.map((row) => this.search.indexProduct(row)));
 
     const [order] = await this.db.db.select().from(orders).where(eq(orders.id, orderId)).limit(1);
     const orderLines = await this.db.db.select().from(orderItems).where(eq(orderItems.orderId, orderId));

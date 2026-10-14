@@ -12,8 +12,7 @@
     "db:studio": "drizzle-kit studio",
     "db:reset": "node -e \"const fs=require('node:fs');fs.rmSync('./db',{recursive:true,force:true});fs.mkdirSync('./db',{recursive:true})\" && drizzle-kit push --force && tsx src/db/seed/seed.ts",
     "seed": "tsx src/db/seed/seed.ts",
-    "db:info": "tsx scripts/db-info.ts",
-    "search:reindex": "tsx scripts/reindex.ts"
+    "db:info": "tsx scripts/db-info.ts"
   },
   "engines": {
     "node": ">=20"
@@ -31,7 +30,6 @@
     "class-validator": "^0.14.1",
     "dotenv": "^16.4.5",
     "drizzle-orm": "^0.45.4",
-    "meilisearch": "^0.62.0",
     "reflect-metadata": "^0.2.2",
     "rxjs": "^7.8.1"
   },

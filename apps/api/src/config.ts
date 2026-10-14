@@ -8,8 +8,6 @@ export const ENV = {
   tursoAuthToken: (process.env.TURSO_AUTH_TOKEN ?? "").trim(),
   tursoSyncUrl: (process.env.TURSO_SYNC_URL ?? "").trim(),
   tursoSyncInterval: parseInt(process.env.TURSO_SYNC_INTERVAL ?? "60000", 10),
-  meilisearchUrl: (process.env.MEILISEARCH_URL ?? "").trim(),
-  meilisearchMasterKey: (process.env.MEILISEARCH_MASTER_KEY ?? "").trim(),
   webOrigin: (process.env.WEB_ORIGIN ?? "http://localhost:3000").trim(),
 };
 

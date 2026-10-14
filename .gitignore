@@ -36,11 +36,6 @@ apps/api/db/
 *.db-wal
 *.db-journal
 
-# ---------- Binarios y datos locales del buscador ----------
-tools/*.exe
-tools/meili-data/
-tools/meilisearch/
-
 # ---------- Tests ----------
 coverage/
 test-results/

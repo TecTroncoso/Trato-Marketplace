@@ -7,11 +7,10 @@
 ![Drizzle ORM](https://img.shields.io/badge/Drizzle-0.45-c5f74f?logo=drizzle&logoColor=black)
 ![Turso](https://img.shields.io/badge/Turso-libSQL-4ff8d2?logo=turso&logoColor=black)
 ![Tailwind CSS](https://img.shields.io/badge/Tailwind-4-38bdf8?logo=tailwindcss&logoColor=white)
-![Meilisearch](https://img.shields.io/badge/Meilisearch-1.54-ff5caa?logo=meilisearch&logoColor=white)
 
 Marketplace full-stack estilo Mercado Libre: catálogo con búsqueda tolerante a errores tipográficos, carrito, checkout, órdenes, reputación de vendedores, preguntas y respuestas, y panel de vendedor.
 
-La persistencia corre sobre **SQLite/libSQL con Drizzle ORM**, con arquitectura preparada para **Turso** (base distribuida con réplicas embebidas) y **optimizada para baja latencia**.
+La persistencia corre sobre **SQLite/libSQL con Drizzle ORM**, con arquitectura preparada para **Turso** (base distribuida con réplicas embebidas) y **optimizada para baja latencia**. La búsqueda es **in-process**: no hay servicio de búsqueda externo, todo corre dentro de la API sobre la misma base.
 
 Es un **proyecto de demostración de ingeniería**, no un comercio real: los pagos son simulados y las imágenes son SVG generados. No está afiliado a Mercado Libre.
 
@@ -24,9 +23,9 @@ Es un **proyecto de demostración de ingeniería**, no un comercio real: los pag
 3. [Arquitectura](#arquitectura)
 4. [Capa de datos: Drizzle + libSQL/Turso](#capa-de-datos-drizzle--libsqlturso)
 5. [Latencia en Turso](#latencia-en-turso)
-6. [Estructura del repositorio](#estructura-del-repositorio)
-7. [Modelo de datos](#modelo-de-datos)
-8. [Diseño del buscador](#diseño-del-buscador)
+6. [Diseño del buscador](#diseño-del-buscador)
+7. [Estructura del repositorio](#estructura-del-repositorio)
+8. [Modelo de datos](#modelo-de-datos)
 9. [Requisitos previos](#requisitos-previos)
 10. [Puesta en marcha](#puesta-en-marcha)
 11. [Variables de entorno](#variables-de-entorno)
@@ -39,7 +38,7 @@ Es un **proyecto de demostración de ingeniería**, no un comercio real: los pag
 18. [Convenciones](#convenciones)
 19. [Limitaciones conocidas](#limitaciones-conocidas)
 20. [Roadmap](#roadmap)
-21. [Despliegue en producción (Vercel + Render)](#despliegue-en-producción-vercel--render)
+21. [Despliegue en producción (Vercel + Turso)](#despliegue-en-producción-vercel--turso)
 
 ---
 
@@ -60,7 +59,7 @@ Trato cubre el ciclo completo de un marketplace de dos lados.
 - Respuesta a preguntas de compradores desde la propia ficha del producto.
 
 **Plataforma**
-- Búsqueda con **Meilisearch** y tolerancia a errores tipográficos (`samsumg` encuentra `Samsung`), con degradación automática a un buscador local si el motor no está disponible.
+- **Buscador in-process**: filtra en SQL, puntúa en memoria (título > prefijo > Levenshtein > marca > descripción, con boost por ventas, rating y envío gratis) y arma facetas al vuelo. Sin servicio externo que sincronizar.
 - Acceso a datos con **Drizzle ORM** sobre **libSQL**, con tres modos de conexión: archivo local, Turso remoto o **réplica embebida**.
 - Seed determinista que genera un catálogo realista en español de Argentina.
 - Tipos y contratos compartidos entre API y web, validación en el borde y OpenAPI generado.
@@ -80,17 +79,16 @@ Trato cubre el ciclo completo de un marketplace de dos lados.
 | ORM | **Drizzle ORM 0.45** | SQL-first y tipado, sin capa de runtime pesada; permite **joins explícitos en una sola query** y SQL crudo cuando conviene, algo clave contra una base remota. |
 | Base de datos | **libSQL** (`@libsql/client`) sobre **SQLite** local o **Turso** distribuido | Turso es SQLite gestionado con réplicas por región: lecturas a latencia de disco local y despliegue en minutos. |
 | Migraciones | **drizzle-kit** | `push` para desarrollo y `generate` para versionar el DDL en SQL (aplicable a Turso con `turso db shell`). |
+| Búsqueda | **Buscador propio in-process** | Cero servicios extra, cero sincronización de índices y $0 de infraestructura: candidatos por SQL, scoring con tolerancia a typos y facetas en memoria. |
 | API | **REST + OpenAPI/Swagger** | Caché y semántica HTTP natural para catálogo; documentación viva en `/api/docs`. |
-| Búsqueda | **Meilisearch** | Open source, deploy en minutos, tolerancia a typos nativa, facetas y reglas de ranking personalizadas. |
 | Contratos | **`@trato/shared`** (workspace) | Única fuente de verdad de tipos y constantes para API y web. |
 
 ### Decisiones y trade-offs
 
 - **Drizzle en lugar de Prisma.** SQL-first: permite escribir **un `SELECT` con joins** para cada listado (Prisma emitía una query por nivel de `include`, es decir 3-4 round trips por ficha de producto contra una base remota). Además, Drizzle no impone un motor de consultas propio: podés bajar a SQL cuando hace falta, como en el recálculo de reputación o en el `UPDATE ... SET stock = stock - n` atómico del checkout.
 - **libSQL/Turso en lugar de PostgreSQL.** El marketplace es de lectura intensiva y multi-región: la **réplica embebida** da lecturas locales y las escrituras van al primario. Sin Docker obligatorio para desarrollar (archivo local) y sin perder el camino a producción distribuida.
+- **Buscador in-process en lugar de un servicio externo.** La búsqueda vive dentro de la API (candidatos por SQL + scoring con Levenshtein y facetas en memoria). Ventajas: una pieza menos que desplegar, nada que sincronizar, costo cero y latencias de milisegundos para catálogos medianos. El trade-off está declarado abajo en [Limitaciones](#limitaciones-conocidas).
 - **REST en lugar de GraphQL.** El catálogo se beneficia del caché HTTP y de URLs estables para SEO; GraphQL añadiría una capa de resolución que aquí no paga su costo.
-- **Buscador con doble motor.** La API habla Meilisearch primero y cae a un buscador local (Levenshtein + scoring) cuando el motor no responde. La UI expone el motor activo (`engine: "meilisearch" | "local"`), de modo que degradar es observable y no silencioso.
-- **Ranking delegado a Meilisearch.** El orden por relevancia, popularidad y rating vive en las `rankingRules` del índice, no en SQL: la base remota nunca se usa para ordenar/filtrar catálogo completo.
 - **Imágenes generadas (SVG).** El seed genera ~1.200 SVG con gradientes y categorías, de modo que la demo funciona **offline** y sin depender de CDNs externos.
 - **Dinero como enteros.** Todos los precios son `integer` en pesos argentinos, sin decimales: cero errores de punto flotante.
 
@@ -110,12 +108,11 @@ flowchart LR
   subgraph API["apps/api — NestJS 11"]
     CTRL["Controllers + DTOs<br/>(class-validator)"]
     SVC["Servicios de dominio"]
+    SEARCH["SearchService<br/>candidatos SQL + scoring y facetas"]
     REPO["Capa de datos<br/>Drizzle + joins en una query"]
-    SEARCH["SearchService<br/>Meilisearch + fallback local"]
   end
 
   DB[("libSQL / SQLite<br/>o Turso (réplica)")]
-  MEILI[("Meilisearch<br/>índice products")]
 
   B -->|HTML + hidratación| RSC
   B -->|fetch cliente| CC
@@ -123,17 +120,16 @@ flowchart LR
   CC -->|REST /api/v1| CTRL
   CTRL --> SVC
   SVC --> REPO
+  SVC --> SEARCH
+  SEARCH --> REPO
   REPO --> DB
-  SVC -->|indexa / consulta| SEARCH
-  SEARCH --> MEILI
-  SEARCH -.->|si el motor no responde| REPO
 ```
 
 Flujos clave:
 
-- **Lectura pública (catálogo):** `Server Component` → `GET /search` → `SearchService` → Meilisearch (o SQLite en modo local) → HTML renderizado en el servidor.
-- **Escritura autenticada (publicar, comprar, opinar):** `Client Component` → `fetch` con `Bearer` → guard JWT → servicio → Drizzle → reindexado incremental en Meilisearch.
-- **Degradación:** si Meilisearch no responde, `SearchService` conmuta a modo local y la búsqueda sigue funcionando con tolerancia a errores propia.
+- **Lectura pública (catálogo):** `Server Component` → `GET /search` → `SearchService` (filtró en SQL y puntuó en memoria) → HTML renderizado en el servidor.
+- **Escritura autenticada (publicar, comprar, opinar):** `Client Component` → `fetch` con `Bearer` → guard JWT → servicio → Drizzle. Sin reindexado: la búsqueda lee la misma base.
+- **Degradación:** no aplica — no hay servicio externo del cual caerse.
 
 ---
 
@@ -151,7 +147,7 @@ Flujos clave:
 
 ### Cómo se accede a los datos
 
-- **Un `SELECT` con joins por listado.** `src/db/queries/products.ts` expone `productSelection(db)`, que trae producto + vendedor + categoría + padre + abuelo en **una sola query** (con `alias()` para los self-joins del árbol de categorías). Todos los listados y la ficha de producto lo reutilizan.
+- **Un `SELECT` con joins por listado.** `src/db/queries/products.ts` expone `productSelection(db)`, que trae producto + vendedor + categoría + padre + abuelo en **una sola query** (con `alias()` para los self-joins del árbol de categorías). Todos los listados, la ficha de producto y la búsqueda lo reutilizan.
 - **Sin N+1 en órdenes.** `myOrders` y `sales` traen órdenes y luego sus ítems con un `inArray` y agrupan en memoria: 2 queries, no 2×N.
 - **Batch en vez de transacción interactiva.** El checkout usa `db.batch([...])` (insert de orden + ítems + `UPDATE products SET stock = stock - n, sold_quantity = sold_quantity + n`). Es **atómico y compatible con el protocolo HTTP de Turso**, que no soporta transacciones interactivas.
 - **Agregaciones en SQL.** El recálculo de reputación y de favoritos usa `UPDATE ... SET x = (SELECT COUNT(*) …)` y `AVG()` en una sola sentencia, en lugar de cientos de updates desde la app.
@@ -160,7 +156,7 @@ Flujos clave:
 ### Migraciones y esquema
 
 ```bash
-npm run db:push        # aplica el esquema al archivo local (desarrollo)
+npm run db:push        # aplica el esquema a la base configurada (desarrollo y Turso)
 npm run db:generate    # genera SQL versionado en apps/api/drizzle/0000_*.sql
 npm run db:studio      # explorador visual
 npm run db:info        # modo, URL, tablas y conteos de la DB configurada
@@ -190,8 +186,7 @@ Estado de cada técnica en este repositorio.
 | Batch atómico en checkout (1 round trip para N escrituras) | `orders.service.ts` |
 | Índices compuestos alineados a las queries calientes | `schema.ts`: `(status, category_id, sold_quantity)`, `(status, created_at)`, `(status, rating)`, `(status, price)`, `(user_id, created_at)`, `(product_id, created_at)` |
 | Escrituras como expresiones SQL atómicas (sin read-modify-write) | `sql\`${products.stock} - ${qty}\`` en checkout |
-| Búsqueda y facetas fuera de SQL (delegadas a Meilisearch) | `SearchService` |
-| Ranking de relevancia/popularidad en el índice, no en la DB | `RANKING_RULES` (`soldQuantity:desc`, `rating:desc`) |
+| **Sin servicio de búsqueda externo** (nada de red extra ni índice espejo) | `SearchService` in-process |
 | Cliente único por proceso (nunca por request) | `DbService` singleton por DI de Nest |
 | Probe de latencia observable | `GET /health` → `latencyMs` |
 | Protocolo elegible según despliegue | `libsql://` (WS, servidor long-running) vs `https://` (HTTP, serverless) |
@@ -205,7 +200,23 @@ Estado de cada técnica en este repositorio.
 | Keyset pagination en lugar de `skip` en páginas profundas | Evita recorrer filas descartadas. |
 | Desnormalizar `sellerName`/`sellerStatus`/`location` en `products` | Elimina el join con `users` en listados. |
 | Caché de la home y de facetas (Redis o caché en proceso) | Corta las 8 queries del payload de home. |
-| Prohibir el buscador local por `LIKE '%x%'` en producción | Evita full scans cuando Meilisearch no está. |
+| FTS5 en Turso si el catálogo crece a decenas de miles | Índice invertido dentro de la misma base, sin servicios extra. |
+
+---
+
+## Diseño del buscador
+
+El buscador es **in-process**: vive dentro de `SearchService` (`apps/api/src/modules/search/`) y no hay índice espejo ni servicio externo. Funciona así, en un único request:
+
+1. **Candidatos por SQL.** Construye un `WHERE` con Drizzle (categoría y descendientes, rango de precio, condición, marca, ubicación, stock) sobre `productSelection()` — un join que ya trae producto, vendedor y cadena de categorías. Techo de 600 candidatos.
+2. **Scoring en memoria** por token de la consulta: coincidencia exacta en título (12) > prefijo de palabra (8) > **Levenshtein dentro de tolerancia** (6; 1 edición para palabras de 4-6 letras, 2 para 7+) > marca (5) > descripción (2). Ajustes: penalización cuando algún token no matchea, boost por ventas (hasta 2 puntos), rating (hasta 0.5) y envío gratis (+0.3).
+3. **Orden.** `relevance` (score), `price_asc`, `price_desc`, `sold_desc`, `rating_desc`, `newest`.
+4. **Facetas al vuelo.** `brands`, `conditions` y `locations` con contadores, calculadas sobre el resultado puntuado.
+5. **Sugerencias.** `LIKE` sobre título y marca (máx. 6 títulos únicos).
+
+**Contrato.** `GET /search` acepta `q`, `category`, `minPrice`, `maxPrice`, `condition`, `brand[]`, `location`, `freeShipping`, `inStock`, `sort` y paginación; devuelve hits, totales, facetas y `tookMs`.
+
+**Verificado:** `samsumg` → 21 resultados con Samsung ordenados por relevancia y popularidad en **~8-78 ms**; `ipone` → iPhones; sin query, la misma maquinaria sirve listados por categoría y por orden.
 
 ---
 
@@ -214,8 +225,9 @@ Estado de cada técnica en este repositorio.
 ```
 Trato MarketPlace/
 ├─ package.json                 # workspaces + scripts orquestadores (concurrently)
-├─ docker-compose.yml           # Meilisearch (opcional)
 ├─ .env.example                 # documentación de variables de entorno
+├─ render.yaml                  # infra como código: alternativa Render para la API
+├─ vercel.json                  # multi-service: rewrites + binding web→api
 ├─ packages/
 │  └─ shared/                   # @trato/shared — tipos y constantes compartidas
 │     └─ src/{types,constants,index}.ts
@@ -224,7 +236,7 @@ Trato MarketPlace/
    │  ├─ drizzle.config.ts      # dialecto sqlite/turso según entorno
    │  ├─ db/                    # archivo local de libSQL (gitignored)
    │  ├─ drizzle/               # migraciones SQL versionadas
-   │  ├─ scripts/reindex.ts     # CLI de reindexado
+   │  ├─ scripts/db-info.ts     # inspección de la base configurada
    │  └─ src/
    │     ├─ main.ts             # bootstrap, prefijo /api/v1, Swagger, pipes, CORS
    │     ├─ config.ts           # env tipado + databaseMode()
@@ -235,15 +247,14 @@ Trato MarketPlace/
    │     │  ├─ db.service.ts    # cliente + drizzle + ping/sync (singleton)
    │     │  ├─ mappers.ts       # fila con joins → DTO de la API
    │     │  ├─ queries/products.ts   # select con joins en una query
-   │     │  ├─ meili-sync.ts    # indexado compartido (seed + CLI)
    │     │  └─ seed/            # seed.ts + seed-data.ts + images.ts
-   │     ├─ health/             # /health con modo de DB y latencia
+   │     ├─ health/             # /health con modo de DB, latencia y esquema
    │     └─ modules/
    │        ├─ auth/            # registro, login, /me (JWT)
    │        ├─ users/           # perfil y direcciones
    │        ├─ categories/      # árbol de categorías
    │        ├─ products/        # CRUD, relacionados, publicaciones del vendedor
-   │        ├─ search/          # Meilisearch + fallback local + facets + sugerencias
+   │        ├─ search/          # buscador in-process: scoring, facetas, sugerencias
    │        ├─ orders/          # checkout (batch), compras, ventas, estados
    │        ├─ questions/       # preguntas y respuestas
    │        ├─ reviews/         # opiniones + recálculo de reputación
@@ -251,6 +262,7 @@ Trato MarketPlace/
    │        └─ home/            # payload de la home
    └─ web/                      # @trato/web — Next.js 15
       ├─ next.config.ts         # transpilePackages: ["@trato/shared"]
+      ├─ vercel.json            # modo split (web-only) para Vercel
       └─ src/
          ├─ app/                # rutas del App Router
          ├─ components/         # ui (22 primitivas), layout, home, product, search, cart, account, auth
@@ -286,41 +298,13 @@ Convenciones del esquema (elegidas pensando en Turso):
 
 ---
 
-## Diseño del buscador
-
-`SearchService` (`apps/api/src/modules/search/`) implementa dos motores tras la misma interfaz.
-
-**Documento indexado** (`buildProductDocument`, compartido por API, seed y CLI).
-
-**Configuración del índice**
-
-| Ajuste | Valor |
-|---|---|
-| `searchableAttributes` | `title`, `brand`, `description`, `categoryName`, `sellerName` |
-| `filterableAttributes` | `categoryPath`, `categorySlug`, `condition`, `brand`, `location`, `freeShipping`, `price`, `sellerId`, `discount` |
-| `sortableAttributes` | `price`, `soldQuantity`, `rating`, `createdAt`, `discount` |
-| `rankingRules` | las 7 por defecto + **`soldQuantity:desc`** + **`rating:desc`** (desempate por popularidad y reputación) |
-| `facets` | `brand`, `condition`, `location` |
-| `synonyms` | 16 entradas: `notebook → laptop/laptops/computadora`, `celular → smartphone/telefono`, `heladera → refrigerador/nevera`, … |
-| `primaryKey` | `id` (explícito: hay `categoryId`, `sellerId` e `id`, y la inferencia falla) |
-
-**Contrato de búsqueda.** `GET /search` acepta `q`, `category`, `minPrice`, `maxPrice`, `condition`, `brand[]`, `location`, `freeShipping`, `inStock`, `sort` y paginación. Devuelve hits, totales, facetas con contadores y el motor usado (`engine`) junto al tiempo (`tookMs`).
-
-**Buscador local (fallback).** Cuando `MEILISEARCH_URL` está vacío o el motor no responde: filtra candidatos con Drizzle (categoría y descendientes, precio, condición, marca, ubicación, stock), los puntúa en memoria (coincidencia en título > prefijo > Levenshtein dentro de tolerancia > marca > descripción, con boost por ventas, rating y envío gratis) y reconstruye facetas.
-
-**Indexado.** `POST /search/reindex` reconstruye el índice completo; `npm run search:reindex` hace lo mismo por CLI; y `create/update/pause` de producto más el `checkout` reindexan **solo los documentos afectados**.
-
----
-
 ## Requisitos previos
 
 | Requisito | Versión | Notas |
 |---|---|---|
 | Node.js | >= 20 (validado en 24.16) | |
 | npm | >= 10 (validado en 11.13) | El repo usa **npm workspaces** (no requiere pnpm/yarn). |
-| Meilisearch | opcional | Sin él la búsqueda funciona en modo local. El binario de Windows ya está en `tools/`. |
-| Turso CLI | opcional | Solo para usar Turso remoto o réplicas. |
-| Docker | opcional | Solo para levantar Meilisearch en contenedor. |
+| Turso CLI | opcional | Solo para usar Turso remoto. Con el archivo local no hace falta nada más. |
 
 ---
 
@@ -335,17 +319,7 @@ npm run seed         # 370 productos, 67 categorías, 19 usuarios, opiniones, pr
 npm run dev          # API en :4000 y Web en :3000 en modo watch
 ```
 
-Abrí http://localhost:3000. La búsqueda funciona en modo local (con tolerancia a typos).
-
-### Con Meilisearch real
-
-```bash
-npm run search:serve   # tools/meilisearch.exe en 127.0.0.1:7700 (Windows)
-npm run search:reindex # indexa el catálogo actual
-npm run dev
-```
-
-Verificá el motor activo con `GET http://localhost:4000/api/v1/health`.
+Abrí http://localhost:3000. El buscador ya funciona completo (tolerancia a typos incluida): es el mismo código que corre en producción.
 
 ### Con Turso remoto
 
@@ -361,11 +335,12 @@ turso db tokens create trato       # token
 #    (dejar TURSO_SYNC_URL vacío)
 
 # 3) Aplicar el esquema y cargar datos
-turso db shell trato < apps/api/drizzle/0000_ambiguous_lizard.sql
+npm run db:push
 npm run seed
+npm run db:info                    # verifica modo, tablas y conteos
 ```
 
-### Con réplica embebida (producción recomendada)
+### Con réplica embebida (hosts con disco persistente)
 
 ```bash
 # DATABASE_URL="file:./db/replica.db"      # archivo local de la réplica
@@ -404,21 +379,19 @@ npm run start -w @trato/web          # Web (next start)
 | Variable | Default | Descripción |
 |---|---|---|
 | `DATABASE_URL` | `file:./db/trato.db` | URL de libSQL: `file:…`, `libsql://…` o `https://…`. |
-| `TURSO_AUTH_TOKEN` | vacío | Token de Turso. Su ausencia implica modo archivo local. |
+| `TURSO_AUTH_TOKEN` | vacío | Token de Turso (para modo remoto o réplica). |
 | `TURSO_SYNC_URL` | vacío | Solo si `DATABASE_URL` es `file:`: la API corre en **modo réplica embebida** (ignorada en modo remoto). |
 | `TURSO_SYNC_INTERVAL` | `60000` | Intervalo de sincronización de la réplica (ms). |
 | `JWT_SECRET` | valor de dev | **Cambiar en producción.** |
 | `JWT_EXPIRES_IN` | `7d` | Vigencia del token. |
 | `PORT` | `4000` | Puerto de la API. |
-| `MEILISEARCH_URL` | vacío | Vacío ⇒ buscador local. Ej.: `http://127.0.0.1:7700`. |
-| `MEILISEARCH_MASTER_KEY` | vacío | Debe coincidir con el motor. |
 | `WEB_ORIGIN` | `http://localhost:3000` | Origen permitido por CORS. |
 
 **`apps/web/.env.local`**
 
 | Variable | Default | Descripción |
 |---|---|---|
-| `NEXT_PUBLIC_API_URL` | `http://localhost:4000/api/v1` | Base de la API usada por SSR y por el cliente. |
+| `NEXT_PUBLIC_API_URL` | `http://localhost:4000/api/v1` | Base de la API usada por SSR y por el cliente (en Vercel multi-service no se define: el navegador usa `/api/v1` relativo y el SSR usa el binding). |
 
 ---
 
@@ -436,9 +409,7 @@ npm run start -w @trato/web          # Web (next start)
 | `npm run db:studio` | Explorador visual de la base. |
 | `npm run db:info` | Inspecciona la DB configurada: modo, URL, tablas y conteos. |
 | `npm run db:reset` | Borra la base local, reaplica el esquema y siembra. |
-| `npm run seed` | Repuebla (determinista) y reindexa si hay Meilisearch. |
-| `npm run search:reindex` | Reconstruye el índice sin pasar por la API. |
-| `npm run search:serve` | Levanta Meilisearch local (Windows, binario en `tools/`). |
+| `npm run seed` | Repuebla la base (determinista). |
 
 ---
 
@@ -448,7 +419,7 @@ Prefijo global: `/api/v1` · Documentación interactiva: **`/api/docs`** · Aute
 
 | Método | Ruta | Auth | Descripción |
 |---|---|---|---|
-| GET | `/health` | — | Estado de la DB (modo, latencia, fuente de la URL), **si el esquema está aplicado** (`schema`/`schemaHint`) y motor de búsqueda. |
+| GET | `/health` | — | Estado de la DB (modo, latencia, fuente de la URL) y **si el esquema está aplicado** (`schema`/`schemaHint`). |
 | POST | `/auth/register` | — | Alta de usuario; devuelve `{ token, user }`. |
 | POST | `/auth/login` | — | Login; devuelve `{ token, user }`. |
 | GET | `/auth/me` | Sí | Usuario de la sesión. |
@@ -459,7 +430,6 @@ Prefijo global: `/api/v1` · Documentación interactiva: **`/api/docs`** · Aute
 | GET | `/categories/:slug/ancestors` | — | Breadcrumb. |
 | GET | `/search` | — | Búsqueda con filtros, facetas, orden y paginación. |
 | GET | `/search/suggestions?q=` | — | Autocompletado de títulos. |
-| POST | `/search/reindex` | Sí | Reconstruye el índice de Meilisearch. |
 | GET | `/products/:param` | — | Detalle por `slug` o `id` (incrementa visitas). |
 | GET | `/products/:id/related` | — | Productos similares. |
 | GET | `/products/:id/questions` | — | Preguntas del producto. |
@@ -468,7 +438,7 @@ Prefijo global: `/api/v1` · Documentación interactiva: **`/api/docs`** · Aute
 | GET | `/sellers/:id/products` | — | Catálogo de un vendedor. |
 | POST | `/products` | Sí | Publicar producto. |
 | PATCH | `/products/:id` | Sí | Editar (solo el vendedor). |
-| PUT | `/products/:id/pause` | Sí | Pausar/reactivar (alterna estado y sincroniza el índice). |
+| PUT | `/products/:id/pause` | Sí | Pausar/reactivar (alterna estado). |
 | POST | `/questions` | Sí | Preguntar. |
 | POST | `/questions/:id/answer` | Sí | Responder (solo el vendedor del producto). |
 | POST | `/reviews` | Sí | Opinar / actualizar opinión (upsert). |
@@ -530,7 +500,7 @@ Las páginas `○` se prerenderizan como shell y resuelven la sesión en el clie
 - **Validación en el borde:** `ValidationPipe` con `whitelist`, `forbidNonWhitelisted` y conversión implícita; DTOs con `class-validator` (mensajes en español).
 - **Autorización por recurso:** editar/pausar producto, responder pregunta y cambiar estado de envío verifican la propiedad y responden `403`.
 - **Integridad de compra:** el checkout valida existencia, estado y stock antes de escribir, y descuenta stock de forma atómica.
-- **CORS:** restringido a `WEB_ORIGIN` y `localhost:3000`.
+- **CORS:** restringido a `WEB_ORIGIN` y `localhost:3000` (en multi-service de Vercel no se usa: same-origin).
 
 **Fuera de alcance (a propósito, es una demo):** rate limiting, verificación de email, recuperación de contraseña, refresh tokens y CSRF/cookies `httpOnly`. El token se guarda en `localStorage`, aceptable para una demo pero sujeto a XSS en producción real.
 
@@ -541,20 +511,26 @@ Las páginas `○` se prerenderizan como shell y resuelven la sesión en el clie
 Todo se validó ejecutando el sistema real.
 
 ```powershell
-# Estado de la base y del motor
+# Estado de la base (modo, latencia y esquema)
 Invoke-RestMethod http://localhost:4000/api/v1/health
-# → database: ok · databaseMode: file · latencyMs: 1 · searchEngine: meilisearch
+# → status: ok · database: ok · schema: ok · databaseMode: file · latencyMs: 1
 
 # Tolerancia a errores tipográficos
 Invoke-RestMethod "http://localhost:4000/api/v1/search?q=samsumg&perPage=3"
-# → total 21 en 5 ms · top: "Samsung Smart TV Crystal UHD 4K 55\" (3549 vendidos)"
+# → total 21 en ~8 ms · top: "Samsung Galaxy S24 Ultra ..." / "Samsung Odyssey G5 ..."
+Invoke-RestMethod "http://localhost:4000/api/v1/search?q=ipone&perPage=2"
+# → iPhones
 
-# Filtros, facetas y orden
+# Facetas y filtros
 Invoke-RestMethod "http://localhost:4000/api/v1/search?brand=Lenovo&perPage=3"
 Invoke-RestMethod "http://localhost:4000/api/v1/search?q=zapatillas&freeShipping=1&sort=price_asc"
 
 # Checkout autenticado (batch + stock atómico)
-# → orden TR-XXXX · stock 30 → 28 · sold_quantity 2329 → 2331 · aparece en "Mis compras"
+# → orden TR-XXXX · stock decrementado · aparece en "Mis compras"
+
+# Inspección de la base
+npm run db:info
+# → mode, url, tablas y conteos
 ```
 
 Resultados observados:
@@ -564,11 +540,9 @@ Resultados observados:
 | `nest build` / `next build` | sin errores de tipos; 14 rutas, 103 kB shared JS |
 | `drizzle-kit push` | 9 tablas, 22 índices, 15 FKs |
 | Seed | 19 usuarios · 67 categorías · 370 productos · 963 opiniones · 356 preguntas · 18 órdenes · 20 favoritos |
-| Índice Meilisearch | 370 documentos, `engine: meilisearch` |
-| Ranking personalizado | `soldQuantity:desc`, `rating:desc` aplicadas en el índice |
-| Búsqueda con typos | `samsumg` → 21 resultados en 5 ms, todos Samsung ordenados por ventas |
+| Búsqueda con typos (in-process) | `samsumg` → 21 resultados con Samsung; `ipone` → iPhones |
+| Facetas | marcas/condiciones/ubicaciones con contadores sobre el resultado |
 | Checkout | batch atómico, stock descontado, visible en mis compras |
-| Publicar producto | aparece en el índice al instante; al pausar desaparece |
 | Validaciones | carrito vacío, falta de token y cantidad fuera de rango devuelven mensajes claros |
 | SSR | home, búsqueda, categoría, detalle, carrito, checkout y favoritos responden con contenido esperado |
 | Imágenes | SVG servidos con HTTP 200 |
@@ -577,20 +551,19 @@ Resultados observados:
 
 ## Notas de ingeniería
 
-Trampas reales encontradas durante la migración a Drizzle/libSQL, y cómo se resolvieron.
+Trampas reales encontradas durante la construcción, y cómo se resolvieron.
 
 | Síntoma | Causa raíz | Corrección |
 |---|---|---|
-| `TS1479: The current file is a CommonJS module … the referenced file is an ECMAScript module` | `@libsql/client` y `meilisearch` son ESM puros y el build de Nest es CommonJS | Carga diferida con `await import()` en lugar de import estático |
+| `TS1479: The current file is a CommonJS module … the referenced file is an ECMAScript module` | `@libsql/client` es ESM puro y el build de Nest es CommonJS | Carga diferida con `await import()` en lugar de import estático |
 | `TS1541: Type-only import of an ECMAScript module … must have a 'resolution-mode' attribute` | Los tipos de un paquete ESM no se pueden importar por tipo desde CJS sin declarar el modo | `import("@libsql/client", { with: { "resolution-mode": "import" } }).Client` |
 | La base no se podía inicializar en el constructor | `createClient` sólo existe del lado ESM | `onModuleInit` asíncrono en `DbService`, con getters que fallan si se usan antes |
 | `SQL<unknown>` no es aceptado por `client.execute` | Se pasaba un objeto SQL de Drizzle a la API cruda de libSQL | `client.execute("select 1")` para el probe, `db.run(sql\`…\`)` para SQL de Drizzle |
 | `addressSnapshot` no coincidía con el tipo de la columna JSON | El DTO tiene `phone` opcional y la columna lo exige `string \| null` | Normalizar en el servicio: `{ ...dto.address, phone: dto.address.phone ?? null }` |
-| Documentos no se indexaban (`index_primary_key_multiple_candidates_found`) | Meilisearch no puede inferir la PK con `categoryId`, `sellerId` e `id` | `addDocuments(docs, { primaryKey: "id" })` |
-| `samsumg` devolvía un cargador como primer resultado | Sin reglas de ranking personalizadas, el desempate era arbitrario | Añadir `soldQuantity:desc` y `rating:desc` a las `rankingRules` |
 | `prisma migrate dev` colgaba esperando input | Prompt interactivo de nombre de migración | Reemplazado por `drizzle-kit push --force` (determinista) y `db:generate` para versionar |
 | En Vercel, `/health` decía `database: ok` pero todo devolvía `no such table: categories` | `select 1` funciona en una base vacía: el probe de conexión no detecta esquema faltante | El health ahora consulta una tabla real (`categories`) y reporta `schema: missing` + `schemaError` + `schemaHint` |
 | Turso con `libsql://` remota quedaba en modo réplica y colgaba | `databaseMode()` interpretaba `TURSO_SYNC_URL` presente sin mirar la URL | La réplica exige `file:`: remoto gana si la URL no es archivo |
+| Réplica embebida fallaba con `invalid local state: db file exists but metadata file does not` | El archivo `file:` era un `.db` plano de `db:push`, no una réplica de libSQL | Usar un archivo nuevo para la réplica; `db:push` y la app no deben compartir el mismo archivo en modo réplica. |
 
 ---
 
@@ -614,7 +587,7 @@ Trampas reales encontradas durante la migración a Drizzle/libSQL, y cómo se re
 - Sin mensajería directa comprador-vendedor (solo preguntas públicas).
 - Sin tests automatizados todavía (ver Roadmap).
 - Las opiniones no verifican una compra previa.
-- El buscador local es funcional pero no reemplaza el ranking de Meilisearch; y su `LIKE '%x%'` es un full scan (no apto para producción).
+- **El buscador in-process** es excelente hasta catálogos de miles de productos: sin typos semánticos (no hay stemming ni sinónimos), con techo de 600 candidatos por consulta y sin búsqueda multi-campo ponderada del lado del servidor. Para decenas de miles de productos, el camino es **FTS5 en Turso** (índice invertido dentro de la misma base) antes de volver a un motor externo.
 - Escritor único en el primario de Turso: picos de checkout serializan.
 - Warnings cosméticos de Next (`metadataBase`).
 
@@ -623,44 +596,45 @@ Trampas reales encontradas durante la migración a Drizzle/libSQL, y cómo se re
 ## Roadmap
 
 **Corto plazo**
-- Suite de tests: unitarios (scorer local, mappers) y e2e con Supertest y Playwright.
+- Suite de tests: unitarios (scorer, mappers) y e2e con Supertest y Playwright.
 - Las optimizaciones de latencia pendientes: `select` recortado, ISR, keyset pagination, desnormalización del vendedor, caché de home/facetas.
 - Subida real de imágenes (S3/MinIO) y rate limiting.
 
 **Mediano plazo**
+- **FTS5 en Turso** como índice del buscador cuando el catálogo crezca: `MATCH` para candidatos + el scorer actual para relevancia, sin servicios extra.
 - Pasarela de pago real (MercadoPago) con webhooks y estados de pago.
 - Mensajería comprador-vendedor y notificaciones en tiempo real.
-- Dockerfiles, CI/CD con `drizzle-kit migrate` + reindexado automático.
+- Dockerfiles, CI/CD con `drizzle-kit migrate` automático.
 - Multi-región con réplicas embebidas por zona y métricas de latencia por región.
 
 **Largo plazo**
-- Extracción de microservicios (búsqueda y checkout primero), manteniendo NestJS como monolito modular.
+- Extracción de microservicios (checkout primero), manteniendo NestJS como monolito modular.
 - Multi-moneda/multi-país con `@trato/shared` como contrato i18n.
 - Recomendaciones personalizadas sobre eventos de navegación.
 
 ---
 
-## Despliegue en producción (Vercel + Render)
+## Despliegue en producción (Vercel + Turso)
 
-El repo es auto-contenido: nada de lo que corre en tu máquina — la base local (`apps/api/db/`), los `.env`, el binario de Meilisearch (`tools/*.exe`, `tools/meili-data/`), ni los builds (`dist/`, `.next/`) — llega a Git; está todo en `.gitignore`. Lo único que hay que subir es el código fuente, el `package-lock.json` y el SQL versionado en `apps/api/drizzle/`.
+El repo es auto-contenido: nada de lo que corre en tu máquina — la base local (`apps/api/db/`), los `.env`, ni los builds (`dist/`, `.next/`) — llega a Git; está todo en `.gitignore`. Lo único que hay que subir es el código fuente, el `package-lock.json` y el SQL versionado en `apps/api/drizzle/`.
 
-Stack de despliegue recomendado:
+Stack de despliegue recomendado (todo en free tier):
 
 | Pieza | Plataforma | Artefacto |
 |---|---|---|
-| Web (Next.js 15, SSR) | Vercel | **Un solo proyecto multi-service** (recomendado): `vercel.json` en la raíz enruta `/api/(.*)` al servicio `api` y el resto a `web`, con el binding `web → api` (inyecta `API_SERVICE_URL`). Alternativa split: web en Vercel con `apps/web/vercel.json`. |
+| Web (Next.js 15, SSR) | Vercel | **Un solo proyecto multi-service**: `vercel.json` en la raíz enruta `/api/(.*)` al servicio `api` y el resto a `web`, con el binding `web → api` (inyecta `API_SERVICE_URL`). Alternativa split: web en Vercel con `apps/web/vercel.json`. |
 | API (NestJS 11) | Vercel (mismo proyecto, público bajo `/api/`) o Render | `render.yaml` (Blueprint: servicio `trato-api` y `trato-web` opcional). |
 | Base de datos | Turso | `libsql://<db>-<org>.turso.io` (o réplica embebida en host con disco persistente). |
-| Buscador | Meilisearch Cloud | `MEILISEARCH_URL` + `MEILISEARCH_MASTER_KEY`. |
+| Buscador | **No hay servicio**: corre in-process dentro de la API | $0 y nada que sincronizar. |
 
 En el modo multi-service desaparece el cross-origin: el navegador llama a `/api/v1/...` en el mismo dominio y el SSR usa el binding inyectado. El cambio es transparente para el código: `apps/web/src/lib/api.ts` resuelve la base según el entorno (binding en functions de Vercel, `NEXT_PUBLIC_API_URL` en dev/split, relativo en el navegador).
 
 Los builds son standalone por workspace: cada `apps/*/package.json` tiene un `prebuild` que compila `@trato/shared`, y la raíz corre `prepare` durante `npm install`. No hay pasos manuales ni ficheros externos al repo.
 
-El paso a paso completo (crear la base en Turso, aplicar el DDL versionado, seed desde local contra la nube, levantar Meilisearch Cloud, configurar Render y Vercel, reindexar y verificar) está en **[DEPLOY.md](./DEPLOY.md)**.
+El paso a paso completo (crear la base en Turso, aplicar el DDL versionado, seed desde local contra la nube, configurar Render y Vercel, y verificar) está en **[DEPLOY.md](./DEPLOY.md)**.
 
 Después de cualquier problema de entorno en deploy, el diagnóstico es directo: `GET /api/v1/health` te dice, en JSON, si la DB responde (`database`), si tiene el esquema (`schema`), de dónde sacó la URL (`databaseUrlSource`) y en qué modo corre (`databaseMode`).
 
 ---
 
-<sub>Proyecto de demostración con fines de portafolio técnico. Tecnologías: Next.js, React, NestJS, Drizzle ORM, libSQL/Turso, Tailwind CSS, Framer Motion, Zustand y Meilisearch. No afiliado a Mercado Libre.</sub>
+<sub>Proyecto de demostración con fines de portafolio técnico. Tecnologías: Next.js, React, NestJS, Drizzle ORM, libSQL/Turso, Tailwind CSS, Framer Motion y Zustand. No afiliado a Mercado Libre.</sub>

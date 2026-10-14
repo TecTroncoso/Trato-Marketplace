@@ -7,7 +7,7 @@
 #
 # Piezas externas (no van en Render):
 #   - Base de datos: Turso (servicio libSQL gestionado, sin contenedores)
-#   - Buscador: Meilisearch Cloud, o Render con disco persistente
+#   - Buscador: in-process dentro de la API (nada que desplegar)
 #
 # Ambos servicios se construyen desde la RAIZ del repo (npm install en la raiz
 # instala los workspaces; el script prepare compila @trato/shared).
@@ -40,10 +40,6 @@ services:
         sync: false
       - key: JWT_EXPIRES_IN
         value: "7d"
-      - key: MEILISEARCH_URL             # https://... (Meilisearch Cloud)
-        sync: false
-      - key: MEILISEARCH_MASTER_KEY
-        sync: false
       - key: WEB_ORIGIN                  # https://<tu-web>.vercel.app
         sync: false
 

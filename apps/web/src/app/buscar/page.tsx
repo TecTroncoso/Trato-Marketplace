@@ -60,7 +60,7 @@ export default async function SearchPage({
           <div className="flex items-center gap-2">
             <MobileFilters basePath={basePath} params={params} facets={result.facets} />
           </div>
-          <SortTabs basePath={basePath} params={params} total={result.total} engine={result.engine} />
+          <SortTabs basePath={basePath} params={params} total={result.total} />
 
           {result.hits.length > 0 ? (
             <>

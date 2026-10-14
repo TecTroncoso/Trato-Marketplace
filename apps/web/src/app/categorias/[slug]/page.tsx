@@ -119,7 +119,7 @@ export default async function CategoryPage({
           <div className="flex items-center gap-2">
             <MobileFilters basePath={basePath} params={searchState} facets={result.facets} />
           </div>
-          <SortTabs basePath={basePath} params={searchState} total={result.total} engine={result.engine} />
+          <SortTabs basePath={basePath} params={searchState} total={result.total} />
 
           {result.hits.length > 0 ? (
             <>

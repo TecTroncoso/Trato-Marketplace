@@ -117,7 +117,6 @@ export interface SearchResult {
   perPage: number;
   totalPages: number;
   facets: SearchFacets;
-  engine: "meilisearch" | "local";
   tookMs: number;
 }
 

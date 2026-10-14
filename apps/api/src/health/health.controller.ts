@@ -2,15 +2,11 @@ import { Controller, Get } from "@nestjs/common";
 import { ApiTags } from "@nestjs/swagger";
 import { DbService } from "../db/db.service";
 import { categories } from "../db/schema";
-import { SearchService } from "../modules/search/search.service";
 
 @ApiTags("health")
 @Controller("health")
 export class HealthController {
-  constructor(
-    private readonly db: DbService,
-    private readonly search: SearchService,
-  ) {}
+  constructor(private readonly db: DbService) {}
 
   @Get()
   async check() {
@@ -51,7 +47,6 @@ export class HealthController {
         schema === "missing"
           ? "El esquema no está aplicado en esta base: ejecutá npm run db:push y npm run seed con la MISMA DATABASE_URL que usa este deploy."
           : null,
-      searchEngine: this.search.engine,
       timestamp: new Date().toISOString(),
     };
   }

@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { SlidersHorizontal, ChevronDown } from "lucide-react";
-import { SORT_OPTIONS, type SearchFacets } from "@trato/shared";
+import { SORT_OPTIONS } from "@trato/shared";
 import type { SearchParamsShape } from "@/lib/search-params";
 import { searchHref } from "@/lib/search-params";
 import { cn } from "@/lib/utils";
@@ -11,12 +11,10 @@ export function SortTabs({
   basePath,
   params,
   total,
-  engine,
 }: {
   basePath: string;
   params: SearchParamsShape;
   total: number;
-  engine: string;
 }) {
   const current = params.sort ?? "relevance";
   const active = SORT_OPTIONS.find((option) => option.value === current) ?? SORT_OPTIONS[0];
@@ -26,15 +24,6 @@ export function SortTabs({
       <div className="flex items-center gap-2 text-sm text-trato-muted">
         <span className="font-semibold text-trato-ink">{total.toLocaleString("es-AR")}</span>
         {params.q ? `resultados para "${params.q}"` : "productos"}
-        <span
-          className={cn(
-            "hidden rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide sm:inline",
-            engine === "meilisearch" ? "bg-trato-green-soft text-trato-green" : "bg-trato-blue-soft text-trato-blue",
-          )}
-          title={engine === "meilisearch" ? "Búsqueda con Meilisearch" : "Búsqueda local con tolerancia a errores"}
-        >
-          {engine === "meilisearch" ? "Meilisearch" : "Buscador local"}
-        </span>
       </div>
 
       <div className="flex items-center gap-2">
@@ -46,9 +35,7 @@ export function SortTabs({
               href={searchHref(basePath, params, { sort: option.value })}
               className={cn(
                 "rounded-md px-3 py-1.5 text-xs font-semibold transition",
-                current === option.value
-                  ? "bg-trato-blue text-white"
-                  : "text-trato-blue hover:bg-trato-blue-soft",
+                current === option.value ? "bg-trato-blue text-white" : "text-trato-blue hover:bg-trato-blue-soft",
               )}
             >
               {option.label}
@@ -79,8 +66,4 @@ export function SortTabs({
       </div>
     </div>
   );
-}
-
-export function facetsSummary(facets: SearchFacets): string {
-  return `${facets.brands.length} marcas · ${facets.conditions.length} condiciones · ${facets.locations.length} ubicaciones`;
 }

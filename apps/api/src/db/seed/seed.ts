@@ -28,7 +28,6 @@ import {
 } from "./seed-data";
 import type { Blueprint } from "./seed-data";
 import { writeCategoryImage, writeFavicon, writeHeroImages, writeProductImages, writeSellerAvatar } from "./images";
-import { createMeiliClient, pingMeilisearch, syncMeilisearch } from "../meili-sync";
 import { activeProductSelection } from "../queries/products";
 import { slugify } from "../../common/slugify";
 
@@ -420,14 +419,7 @@ async function main(): Promise<void> {
   `);
 
   console.log("Sincronizando el buscador...");
-  const meili = await createMeiliClient();
-  if (meili && (await pingMeilisearch(meili))) {
-    const rows = await activeProductSelection(db);
-    const total = await syncMeilisearch(meili, rows);
-    console.log(`  ${total} productos indexados en Meilisearch`);
-  } else {
-    console.log("  Meilisearch no disponible: la búsqueda usa el modo local (tolerante a errores tipográficos).");
-  }
+  console.log("  Buscador propio in-process: sin índice externo que sincronizar.");
 
   const [counts] = await db.all<{ usuarios: number; categorias: number; productos: number; opiniones: number; preguntas: number; ordenes: number; favoritos: number }>(sql`
     SELECT

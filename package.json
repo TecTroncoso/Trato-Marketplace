@@ -2,7 +2,7 @@
   "name": "trato-marketplace",
   "version": "1.0.0",
   "private": true,
-  "description": "Trato - clon de Mercado Libre: Next.js 15 + NestJS + Prisma + Meilisearch",
+  "description": "Trato - clon de Mercado Libre: Next.js 15 + NestJS + Drizzle ORM (libSQL/Turso) + buscador in-process",
   "workspaces": [
     "packages/*",
     "apps/*"
@@ -18,10 +18,7 @@
     "db:studio": "npm run db:studio -w @trato/api",
     "db:info": "npm run db:info -w @trato/api",
     "db:reset": "npm run db:reset -w @trato/api",
-    "seed": "npm run seed -w @trato/api",
-    "search:reindex": "npm run search:reindex -w @trato/api",
-    "search:serve": ".\\tools\\meilisearch.exe --master-key tratoMasterKeyDev --db-path .\\tools\\meili-data --http-addr 127.0.0.1:7700 --env development",
-    "prepare": "npm run build -w @trato/shared"
+    "seed": "npm run seed -w @trato/api"
   },
   "devDependencies": {
     "concurrently": "^9.2.0"

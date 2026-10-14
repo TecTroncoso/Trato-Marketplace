@@ -1,8 +1,7 @@
-import { Controller, Get, HttpCode, HttpStatus, Post, Query, UseGuards } from "@nestjs/common";
-import { ApiBearerAuth, ApiTags } from "@nestjs/swagger";
+import { Controller, Get, Query, Post } from "@nestjs/common";
+import { ApiTags } from "@nestjs/swagger";
 import { SearchQueryDto } from "./dto/search.dto";
-import { SearchService, type SearchEngine } from "./search.service";
-import { JwtAuthGuard } from "../../common/guards/jwt-auth.guard";
+import { SearchService } from "./search.service";
 import type { SearchResult } from "@trato/shared";
 
 @ApiTags("search")
@@ -18,13 +17,5 @@ export class SearchController {
   @Get("suggestions")
   async suggestions(@Query("q") q = ""): Promise<{ suggestions: string[] }> {
     return { suggestions: await this.searchService.suggest(q) };
-  }
-
-  @ApiBearerAuth()
-  @UseGuards(JwtAuthGuard)
-  @Post("reindex")
-  @HttpCode(HttpStatus.OK)
-  reindex(): Promise<{ indexed: number; engine: SearchEngine; message?: string }> {
-    return this.searchService.reindexAll();
   }
 }
