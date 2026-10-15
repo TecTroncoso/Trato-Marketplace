@@ -2,13 +2,14 @@ import { Crown, MapPin, Star, TrendingUp, UserCheck } from "lucide-react";
 import type { SellerSummary } from "@trato/shared";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
+import { Section } from "@/components/ui/section";
 import { initialsOf, formatCompact } from "@/lib/utils";
 
 export function SellerCard({ seller }: { seller: SellerSummary }) {
   const reputation = Math.min(100, Math.round((seller.rating / 5) * 100));
 
   return (
-    <div className="rounded-xl bg-white p-5 shadow-[var(--shadow-card)]">
+    <Section>
       <div className="flex items-center gap-3">
         <Avatar className="size-12">
           {seller.avatar ? <AvatarImage src={seller.avatar} alt={seller.name} /> : null}
@@ -69,6 +70,6 @@ export function SellerCard({ seller }: { seller: SellerSummary }) {
       >
         Ver más publicaciones del vendedor
       </a>
-    </div>
+    </Section>
   );
 }

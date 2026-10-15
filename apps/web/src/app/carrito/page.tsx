@@ -8,6 +8,8 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { EmptyState } from "@/components/ui/empty-state";
 import { CartItemRow } from "@/components/cart/cart-item-row";
+import { PageContainer } from "@/components/ui/page-container";
+import { Section } from "@/components/ui/section";
 import { selectCartSubtotal, useCartStore } from "@/store/cart-store";
 import { useMounted } from "@/hooks/use-client";
 import { formatPrice } from "@/lib/utils";
@@ -20,17 +22,17 @@ export default function CartPage() {
 
   if (!mounted) {
     return (
-      <div className="mx-auto max-w-[1000px] px-3 py-6 sm:px-4">
+      <PageContainer>
         <Skeleton className="mb-4 h-8 w-40" />
         <Skeleton className="h-64 w-full rounded-xl" />
-      </div>
+      </PageContainer>
     );
   }
 
   if (items.length === 0) {
     return (
-      <div className="mx-auto max-w-[1000px] px-3 py-10 sm:px-4">
-        <div className="rounded-xl bg-white shadow-[var(--shadow-card)]">
+      <PageContainer padding="lg">
+        <Section className="p-0 shadow-[var(--shadow-card)]">
           <EmptyState
             icon={ShoppingCart}
             title="Tu carrito está vacío"
@@ -41,15 +43,15 @@ export default function CartPage() {
               </Button>
             }
           />
-        </div>
-      </div>
+        </Section>
+      </PageContainer>
     );
   }
 
   const totalItems = items.reduce((total, item) => total + item.quantity, 0);
 
   return (
-    <div className="mx-auto max-w-[1000px] px-3 py-6 sm:px-4">
+    <PageContainer>
       <div className="mb-4 flex items-center justify-between">
         <h1 className="text-xl font-bold text-trato-ink sm:text-2xl">
           Tu carrito <span className="text-sm font-normal text-trato-muted">({totalItems} {totalItems === 1 ? "producto" : "productos"})</span>
@@ -67,7 +69,7 @@ export default function CartPage() {
       </div>
 
       <div className="grid gap-4 lg:grid-cols-[1fr_320px]">
-        <div className="rounded-xl bg-white px-4 shadow-[var(--shadow-card)] sm:px-5">
+        <Section className="px-4 sm:px-5 p-0 py-0">
           <ul>
             <AnimatePresence initial={false}>
               {items.map((item) => (
@@ -75,10 +77,10 @@ export default function CartPage() {
               ))}
             </AnimatePresence>
           </ul>
-        </div>
+        </Section>
 
         <aside className="lg:sticky lg:top-28 lg:self-start">
-          <div className="rounded-xl bg-white p-5 shadow-[var(--shadow-card)]">
+          <Section>
             <h2 className="mb-4 text-base font-semibold text-trato-ink">Resumen de compra</h2>
             <dl className="flex flex-col gap-2 text-sm">
               <div className="flex justify-between">
@@ -100,9 +102,9 @@ export default function CartPage() {
             <Button asChild variant="ghost" className="mt-2 w-full text-trato-muted">
               <Link href="/buscar">Seguir comprando</Link>
             </Button>
-          </div>
+          </Section>
         </aside>
       </div>
-    </div>
+    </PageContainer>
   );
 }

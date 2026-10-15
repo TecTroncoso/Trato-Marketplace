@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { AuthForm } from "@/components/auth/auth-form";
+import { PageContainer } from "@/components/ui/page-container";
 
 export const metadata: Metadata = {
   title: "Ingresá a tu cuenta",
@@ -7,8 +8,8 @@ export const metadata: Metadata = {
 
 export default function LoginPage() {
   return (
-    <div className="mx-auto max-w-md px-3 py-10 sm:px-4">
+    <PageContainer width="form" padding="lg">
       <AuthForm mode="login" />
-    </div>
+      </PageContainer>
   );
 }

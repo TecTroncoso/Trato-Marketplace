@@ -8,6 +8,7 @@ import { ApiOffline } from "@/components/layout/api-offline";
 import { FiltersPanel, MobileFilters } from "@/components/search/filters-panel";
 import { SortTabs } from "@/components/search/sort-tabs";
 import { ProductGrid } from "@/components/product/product-grid";
+import { PageContainer } from "@/components/ui/page-container";
 import { Pagination } from "@/components/ui/pagination";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Breadcrumbs } from "@/components/ui/breadcrumb";
@@ -78,7 +79,7 @@ export default async function CategoryPage({
   ];
 
   return (
-    <div className="mx-auto max-w-[1220px] px-3 py-4 sm:px-4">
+    <PageContainer width="wide" padding="sm">
       <Breadcrumbs items={crumbs} className="mb-3" />
 
       <header className="mb-4 flex items-center gap-4 rounded-xl bg-white p-4 shadow-[var(--shadow-card)]">
@@ -142,7 +143,7 @@ export default async function CategoryPage({
           )}
         </div>
       </div>
-    </div>
+    </PageContainer>
   );
 }
 

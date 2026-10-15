@@ -6,6 +6,8 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { EmptyState } from "@/components/ui/empty-state";
 import { AccountTabs } from "@/components/account/account-tabs";
+import { PageContainer } from "@/components/ui/page-container";
+import { Section } from "@/components/ui/section";
 import { useAuthStore } from "@/store/auth-store";
 import { useMounted } from "@/hooks/use-client";
 
@@ -15,17 +17,17 @@ export default function AccountPage() {
 
   if (!mounted) {
     return (
-      <div className="mx-auto max-w-[1000px] px-3 py-6 sm:px-4">
+      <PageContainer>
         <Skeleton className="mb-4 h-8 w-40" />
         <Skeleton className="h-72 w-full rounded-xl" />
-      </div>
+      </PageContainer>
     );
   }
 
   if (!user) {
     return (
-      <div className="mx-auto max-w-[1000px] px-3 py-10 sm:px-4">
-        <div className="rounded-xl bg-white shadow-[var(--shadow-card)]">
+      <PageContainer padding="lg">
+        <Section className="p-0">
           <EmptyState
             icon={UserX}
             title="Ingresá para ver tu cuenta"
@@ -36,8 +38,8 @@ export default function AccountPage() {
               </Button>
             }
           />
-        </div>
-      </div>
+        </Section>
+      </PageContainer>
     );
   }
 

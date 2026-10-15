@@ -13,6 +13,7 @@ import { QuestionsSection } from "@/components/product/questions-section";
 import { ReviewsSection } from "@/components/product/reviews-section";
 import { TrackView } from "@/components/product/track-view";
 import { ProductRail } from "@/components/product/product-rail";
+import { PageContainer } from "@/components/ui/page-container";
 import { Breadcrumbs } from "@/components/ui/breadcrumb";
 
 interface ReviewsPayload {
@@ -84,7 +85,7 @@ export default async function ProductPage({ params }: { params: Promise<{ slug: 
   const relatedFiltered = related.filter((item) => item.id !== product.id);
 
   return (
-    <div className="mx-auto max-w-[1220px] px-3 py-4 sm:px-4">
+    <PageContainer width="wide" padding="sm">
       <TrackView product={product} />
       <Breadcrumbs items={crumbs} className="mb-3" />
 
@@ -141,6 +142,6 @@ export default async function ProductPage({ params }: { params: Promise<{ slug: 
           </Link>
         </p>
       </div>
-    </div>
+    </PageContainer>
   );
 }

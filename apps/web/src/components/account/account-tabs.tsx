@@ -14,6 +14,7 @@ import { OrderCard } from "@/components/account/order-card";
 import { EmptyState } from "@/components/ui/empty-state";
 import { apiFetch } from "@/lib/api";
 import { useAuthStore } from "@/store/auth-store";
+import { Section } from "@/components/ui/section";
 import { formatDate, formatPrice } from "@/lib/utils";
 
 interface MyProduct extends ProductSummary {
@@ -148,7 +149,7 @@ export function AccountTabs() {
         </TabsList>
 
         <TabsContent value="perfil">
-          <div className="rounded-xl bg-white p-5 shadow-[var(--shadow-card)]">
+          <Section>
             <h2 className="mb-4 text-base font-semibold text-trato-ink">Datos personales</h2>
             <div className="grid gap-3 sm:grid-cols-2">
               <div>
@@ -173,14 +174,14 @@ export function AccountTabs() {
                 {savingProfile ? "Guardando…" : "Guardar cambios"}
               </Button>
             </div>
-          </div>
+          </Section>
         </TabsContent>
 
         <TabsContent value="direcciones">
           <div className="flex flex-col gap-4">
-            {addresses.length > 0 && (
-              <div className="rounded-xl bg-white p-5 shadow-[var(--shadow-card)]">
-                <h2 className="mb-3 text-base font-semibold text-trato-ink">Direcciones guardadas</h2>
+{addresses.length > 0 && (
+          <Section>
+            <h2 className="mb-3 text-base font-semibold text-trato-ink">Direcciones guardadas</h2>
                 <ul className="flex flex-col gap-3">
                   {addresses.map((address) => (
                     <li key={address.id} className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-trato-line p-3">
@@ -205,11 +206,11 @@ export function AccountTabs() {
                       </div>
                     </li>
                   ))}
-                </ul>
-              </div>
-            )}
+                 </ul>
+               </Section>
+             )}
 
-            <div className="rounded-xl bg-white p-5 shadow-[var(--shadow-card)]">
+            <Section>
               <h2 className="mb-4 text-base font-semibold text-trato-ink">Agregar dirección</h2>
               <div className="grid gap-3 sm:grid-cols-2">
                 <div>
@@ -239,12 +240,12 @@ export function AccountTabs() {
                   </div>
                 </div>
               </div>
-              <div className="mt-4 flex justify-end">
-                <Button onClick={addAddress}>
-                  <Plus /> Agregar dirección
-                </Button>
-              </div>
+            <div className="mt-4 flex justify-end">
+              <Button onClick={addAddress}>
+                <Plus /> Agregar dirección
+              </Button>
             </div>
+          </Section>
           </div>
         </TabsContent>
 

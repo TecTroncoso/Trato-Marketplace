@@ -8,6 +8,7 @@ import { ApiOffline } from "@/components/layout/api-offline";
 import { FiltersPanel, MobileFilters } from "@/components/search/filters-panel";
 import { SortTabs } from "@/components/search/sort-tabs";
 import { ProductGrid } from "@/components/product/product-grid";
+import { PageContainer } from "@/components/ui/page-container";
 import { Pagination } from "@/components/ui/pagination";
 import { EmptyState } from "@/components/ui/empty-state";
 
@@ -38,7 +39,7 @@ export default async function SearchPage({
   }
 
   return (
-    <div className="mx-auto max-w-[1220px] px-3 py-4 sm:px-4">
+    <PageContainer width="wide" padding="sm">
       {params.q && (
         <p className="mb-3 flex flex-wrap items-center gap-2 text-xs text-trato-muted">
           <Link href="/" className="transition hover:text-trato-blue">
@@ -93,6 +94,6 @@ export default async function SearchPage({
           )}
         </div>
       </div>
-    </div>
+    </PageContainer>
   );
 }

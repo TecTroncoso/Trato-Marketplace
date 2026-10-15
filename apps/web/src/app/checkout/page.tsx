@@ -12,6 +12,8 @@ import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { PageContainer } from "@/components/ui/page-container";
+import { Section } from "@/components/ui/section";
 import { apiFetch } from "@/lib/api";
 import { useAuthStore } from "@/store/auth-store";
 import { selectCartSubtotal, useCartStore } from "@/store/cart-store";
@@ -83,16 +85,16 @@ export default function CheckoutPage() {
 
   if (!mounted) {
     return (
-      <div className="mx-auto max-w-[1000px] px-3 py-6 sm:px-4">
+      <PageContainer>
         <Skeleton className="h-72 w-full rounded-xl" />
-      </div>
+      </PageContainer>
     );
   }
 
   if (!user) {
     return (
-      <div className="mx-auto max-w-[1000px] px-3 py-10 sm:px-4">
-        <div className="rounded-xl bg-white shadow-[var(--shadow-card)]">
+      <PageContainer padding="lg">
+        <Section className="p-0">
           <EmptyState
             icon={CreditCard}
             title="Ingresá para completar tu compra"
@@ -103,15 +105,15 @@ export default function CheckoutPage() {
               </Button>
             }
           />
-        </div>
-      </div>
+        </Section>
+      </PageContainer>
     );
   }
 
   if (items.length === 0) {
     return (
-      <div className="mx-auto max-w-[1000px] px-3 py-10 sm:px-4">
-        <div className="rounded-xl bg-white shadow-[var(--shadow-card)]">
+      <PageContainer padding="lg">
+        <Section className="p-0">
           <EmptyState
             icon={Truck}
             title="No hay productos para comprar"
@@ -122,8 +124,8 @@ export default function CheckoutPage() {
               </Button>
             }
           />
-        </div>
-      </div>
+        </Section>
+      </PageContainer>
     );
   }
 
@@ -170,7 +172,7 @@ export default function CheckoutPage() {
   }
 
   return (
-    <div className="mx-auto max-w-[1000px] px-3 py-6 sm:px-4">
+    <PageContainer>
       <Link href="/carrito" className="mb-4 inline-flex items-center gap-1 text-sm font-semibold text-trato-blue transition hover:underline">
         <ArrowLeft className="size-4" /> Volver al carrito
       </Link>
@@ -178,7 +180,7 @@ export default function CheckoutPage() {
 
       <div className="grid gap-4 lg:grid-cols-[1fr_320px]">
         <div className="flex flex-col gap-4">
-          <section className="rounded-xl bg-white p-5 shadow-[var(--shadow-card)]">
+          <Section>
             <h2 className="mb-1 flex items-center gap-2 text-base font-semibold text-trato-ink">
               <MapPin className="size-4 text-trato-blue" /> Dirección de envío
             </h2>
@@ -241,9 +243,9 @@ export default function CheckoutPage() {
                 </div>
               </div>
             </div>
-          </section>
+          </Section>
 
-          <section className="rounded-xl bg-white p-5 shadow-[var(--shadow-card)]">
+          <Section>
             <h2 className="mb-3 flex items-center gap-2 text-base font-semibold text-trato-ink">
               <Truck className="size-4 text-trato-blue" /> Envío
             </h2>
@@ -254,9 +256,9 @@ export default function CheckoutPage() {
               </div>
               <span className="text-sm font-bold text-trato-green">Gratis</span>
             </div>
-          </section>
+          </Section>
 
-          <section className="rounded-xl bg-white p-5 shadow-[var(--shadow-card)]">
+          <Section>
             <h2 className="mb-3 flex items-center gap-2 text-base font-semibold text-trato-ink">
               <CreditCard className="size-4 text-trato-blue" /> Medio de pago
             </h2>
@@ -335,11 +337,11 @@ export default function CheckoutPage() {
                 Te enviaremos los datos bancarios (CBU/CVU) por email al confirmar el pedido.
               </p>
             )}
-          </section>
+          </Section>
         </div>
 
         <aside className="lg:sticky lg:top-28 lg:self-start">
-          <div className="rounded-xl bg-white p-5 shadow-[var(--shadow-card)]">
+          <Section>
             <h2 className="mb-4 text-base font-semibold text-trato-ink">Resumen</h2>
             <ul className="mb-4 flex flex-col gap-3">
               {items.map((item) => (
@@ -374,9 +376,9 @@ export default function CheckoutPage() {
             <p className="mt-3 text-center text-xs text-trato-muted">
               Al confirmar aceptás los términos y condiciones de Trato.
             </p>
-          </div>
+          </Section>
         </aside>
       </div>
-    </div>
+    </PageContainer>
   );
 }

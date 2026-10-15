@@ -12,6 +12,8 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Skeleton } from "@/components/ui/skeleton";
 import { EmptyState } from "@/components/ui/empty-state";
+import { PageContainer } from "@/components/ui/page-container";
+import { Section } from "@/components/ui/section";
 import { apiFetch } from "@/lib/api";
 import { useAuthStore } from "@/store/auth-store";
 import { useMounted } from "@/hooks/use-client";
@@ -59,16 +61,16 @@ export default function SellPage() {
 
   if (!mounted) {
     return (
-      <div className="mx-auto max-w-[900px] px-3 py-6 sm:px-4">
+      <PageContainer width="narrow">
         <Skeleton className="h-96 w-full rounded-xl" />
-      </div>
+      </PageContainer>
     );
   }
 
   if (!user) {
     return (
-      <div className="mx-auto max-w-[900px] px-3 py-10 sm:px-4">
-        <div className="rounded-xl bg-white shadow-[var(--shadow-card)]">
+      <PageContainer width="narrow" padding="lg">
+        <Section className="p-0">
           <EmptyState
             icon={Store}
             title="Ingresá para publicar un producto"
@@ -79,8 +81,8 @@ export default function SellPage() {
               </Button>
             }
           />
-        </div>
-      </div>
+        </Section>
+      </PageContainer>
     );
   }
 
@@ -152,7 +154,7 @@ export default function SellPage() {
   }
 
   return (
-    <div className="mx-auto max-w-[900px] px-3 py-6 sm:px-4">
+    <PageContainer width="narrow">
       <div className="mb-5">
         <h1 className="text-xl font-bold text-trato-ink sm:text-2xl">Publicá tu producto</h1>
         <p className="text-sm text-trato-muted">
@@ -161,7 +163,7 @@ export default function SellPage() {
       </div>
 
       <div className="flex flex-col gap-4">
-        <section className="rounded-xl bg-white p-5 shadow-[var(--shadow-card)]">
+        <Section>
           <h2 className="mb-4 text-base font-semibold text-trato-ink">Datos del producto</h2>
           <div className="flex flex-col gap-4">
             <div>
@@ -235,9 +237,9 @@ export default function SellPage() {
               <p className="mt-1 text-xs text-trato-muted">{description.length}/4000</p>
             </div>
           </div>
-        </section>
+        </Section>
 
-        <section className="rounded-xl bg-white p-5 shadow-[var(--shadow-card)]">
+        <Section>
           <h2 className="mb-4 text-base font-semibold text-trato-ink">Precio y stock</h2>
           <div className="grid gap-3 sm:grid-cols-3">
             <div>
@@ -258,9 +260,9 @@ export default function SellPage() {
             Si cargás un precio original mayor, mostramos el porcentaje de descuento y calculamos las cuotas sin interés
             automáticamente.
           </p>
-        </section>
+        </Section>
 
-        <section className="rounded-xl bg-white p-5 shadow-[var(--shadow-card)]">
+        <Section>
           <div className="mb-4 flex items-center justify-between">
             <h2 className="text-base font-semibold text-trato-ink">Características (opcional)</h2>
             <Button size="sm" variant="outline" onClick={() => setAttributes((current) => [...current, { key: "", value: "" }])}>
@@ -296,7 +298,8 @@ export default function SellPage() {
               </div>
             ))}
           </div>
-        </section>
+          </Section>
+        </div>
 
         <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl bg-white p-5 shadow-[var(--shadow-card)]">
           <p className="text-xs text-trato-muted">
@@ -306,7 +309,6 @@ export default function SellPage() {
             {submitting ? "Publicando…" : "Publicar producto"}
           </Button>
         </div>
-      </div>
-    </div>
+    </PageContainer>
   );
 }

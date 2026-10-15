@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Rating } from "@/components/ui/rating";
 import { useAuthStore } from "@/store/auth-store";
+import { Section } from "@/components/ui/section";
 import { useCartStore } from "@/store/cart-store";
 import { useFavoritesStore } from "@/store/favorites-store";
 import { useFavoriteToggle } from "@/hooks/use-favorite-toggle";
@@ -62,7 +63,7 @@ export function BuyBox({ product }: { product: ProductDetail }) {
   }
 
   return (
-    <div className="rounded-xl bg-white p-5 shadow-[var(--shadow-card)]">
+    <Section>
       <p className="text-xs text-trato-muted">
         <span className={cn("font-semibold", product.condition === "nuevo" ? "text-trato-ink" : "text-trato-muted")}>
           {product.condition === "nuevo" ? "Nuevo" : "Usado"}
@@ -193,6 +194,6 @@ export function BuyBox({ product }: { product: ProductDetail }) {
           Ingresá para guardar tus favoritos y ver tus compras.
         </p>
       )}
-    </div>
+    </Section>
   );
 }

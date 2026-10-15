@@ -13,6 +13,7 @@ import { PaymentCard } from "@/components/home/widgets/payment-card";
 import { MiniCart } from "@/components/home/widgets/mini-cart";
 import { ShippingPromo } from "@/components/home/widgets/shipping-promo";
 import { AppPromo } from "@/components/home/widgets/app-promo";
+import { PageContainer } from "@/components/ui/page-container";
 
 export const metadata: Metadata = {
   title: "Trato | Comprá y vendé en el marketplace",
@@ -38,7 +39,7 @@ export default async function HomePage() {
     .filter((image): image is string => Boolean(image));
 
   return (
-    <div className="mx-auto max-w-[1360px] px-3 py-4 sm:px-4">
+    <PageContainer width="screen" padding="sm">
       <div className="grid gap-4 lg:grid-cols-[232px_minmax(0,1fr)] xl:grid-cols-[232px_minmax(0,1fr)_300px]">
         <aside className="order-2 hidden lg:order-1 lg:block">
           <div className="lg:sticky lg:top-32">
@@ -62,6 +63,6 @@ export default async function HomePage() {
           <AppPromo />
         </aside>
       </div>
-    </div>
+    </PageContainer>
   );
 }

@@ -8,6 +8,8 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { EmptyState } from "@/components/ui/empty-state";
 import { ProductGrid } from "@/components/product/product-grid";
+import { PageContainer } from "@/components/ui/page-container";
+import { Section } from "@/components/ui/section";
 import { apiFetch } from "@/lib/api";
 import { useAuthStore } from "@/store/auth-store";
 import { useFavoritesStore } from "@/store/favorites-store";
@@ -56,7 +58,7 @@ export default function FavoritesPage() {
   }
 
   return (
-    <div className="mx-auto max-w-[1220px] px-3 py-6 sm:px-4">
+    <PageContainer>
       <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="text-xl font-bold text-trato-ink sm:text-2xl">Mis favoritos</h1>
@@ -74,7 +76,7 @@ export default function FavoritesPage() {
       </div>
 
       {items.length === 0 ? (
-        <div className="rounded-xl bg-white shadow-[var(--shadow-card)]">
+        <Section className="p-0">
           <EmptyState
             icon={Heart}
             title="No tenés favoritos todavía"
@@ -85,10 +87,10 @@ export default function FavoritesPage() {
               </Button>
             }
           />
-        </div>
+        </Section>
       ) : (
         <ProductGrid products={items} />
       )}
-    </div>
+    </PageContainer>
   );
 }
