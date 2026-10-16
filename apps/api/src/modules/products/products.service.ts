@@ -19,7 +19,6 @@ export class ProductsService {
     if (!row) {
       throw new NotFoundException("El producto no existe o fue pausado");
     }
-    void this.registerView(row.product.id);
     return toProductDetail(row);
   }
 
@@ -173,6 +172,23 @@ export class ProductsService {
     return this.related(product.id, product.categoryId, product.sellerId, 10);
   }
 
+  async registerView(productIdOrSlug: string): Promise<{ id: string; views: number }> {
+    const [product] = await this.db.db
+      .select({ id: products.id, views: products.views })
+      .from(products)
+      .where(or(eq(products.id, productIdOrSlug), eq(products.slug, productIdOrSlug)))
+      .limit(1);
+    if (!product) {
+      throw new NotFoundException("El producto no existe");
+    }
+    const [updated] = await this.db.db
+      .update(products)
+      .set({ views: sql`${products.views} + 1` })
+      .where(eq(products.id, product.id))
+      .returning({ id: products.id, views: products.views });
+    return updated;
+  }
+
   private async findRow(productId: string): Promise<JoinedProductRow> {
     const [row] = await productSelection(this.db.db).where(eq(products.id, productId)).limit(1);
     if (!row) {
@@ -194,13 +210,5 @@ export class ProductsService {
 
   private placeholderImages(slug: string): string[] {
     return [`/products/${slug}-1.svg`, `/products/${slug}-2.svg`, `/products/${slug}-3.svg`];
-  }
-
-  private registerView(productId: string): void {
-    void this.db.db
-      .update(products)
-      .set({ views: sql`${products.views} + 1` })
-      .where(eq(products.id, productId))
-      .catch(() => undefined);
   }
 }

@@ -42,6 +42,7 @@ export function Pagination({
             {gap && <span className="px-1 text-trato-muted">…</span>}
             <Link
               href={hrefFor(item)}
+              aria-current={item === page ? "page" : undefined}
               className={cn(
                 "flex size-9 items-center justify-center rounded-md bg-white text-sm font-semibold shadow-[var(--shadow-card)] transition",
                 item === page ? "bg-trato-blue text-white" : "text-trato-blue hover:bg-trato-blue-soft",

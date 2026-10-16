@@ -33,6 +33,12 @@ export class ProductsController {
     return this.products.findByParam(param);
   }
 
+  @Post("products/:id/view")
+  @HttpCode(HttpStatus.OK)
+  registerView(@Param("id") id: string): Promise<{ id: string; views: number }> {
+    return this.products.registerView(id);
+  }
+
   @ApiBearerAuth()
   @UseGuards(JwtAuthGuard)
   @Post("products")

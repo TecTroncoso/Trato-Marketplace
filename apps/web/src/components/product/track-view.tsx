@@ -1,13 +1,18 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import type { ProductDetail } from "@trato/shared";
+import { apiFetch } from "@/lib/api";
 import { useRecentStore } from "@/store/recent-store";
 
 export function TrackView({ product }: { product: ProductDetail }) {
   const push = useRecentStore((state) => state.push);
+  const tracked = useRef(false);
 
   useEffect(() => {
+    if (tracked.current) return;
+    tracked.current = true;
+
     push({
       id: product.id,
       slug: product.slug,
@@ -30,6 +35,8 @@ export function TrackView({ product }: { product: ProductDetail }) {
       installments: product.installments,
       seller: product.seller,
     });
+
+    apiFetch(`/products/${product.id}/view`, { method: "POST" }).catch(() => undefined);
   }, [product, push]);
 
   return null;

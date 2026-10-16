@@ -40,6 +40,7 @@ export default async function SearchPage({
 
   return (
     <PageContainer width="wide" padding="sm">
+      <h1 className="sr-only">Resultados de búsqueda</h1>
       {params.q && (
         <p className="mb-3 flex flex-wrap items-center gap-2 text-xs text-trato-muted">
           <Link href="/" className="transition hover:text-trato-blue">

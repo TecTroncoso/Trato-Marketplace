@@ -12,7 +12,8 @@ export function ProductGrid({
   columns?: "default" | "compact";
 }) {
   return (
-    <div
+    <ul
+      role="list"
       className={cn(
         "grid gap-3",
         columns === "default"
@@ -22,8 +23,10 @@ export function ProductGrid({
       )}
     >
       {products.map((product) => (
-        <ProductCard key={product.id} product={product} />
+        <li key={product.id}>
+          <ProductCard product={product} className="h-full" />
+        </li>
       ))}
-    </div>
+    </ul>
   );
 }
