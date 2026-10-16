@@ -9,6 +9,42 @@ export interface JoinedProductRow {
   grandparent: CategoryRow | null;
 }
 
+export interface SummaryCategoryRow {
+  id: string;
+  name: string;
+  slug: string;
+  parentId: string | null;
+}
+
+export interface SummaryProductRow {
+  id: string;
+  slug: string;
+  title: string;
+  price: number;
+  originalPrice: number | null;
+  condition: string;
+  stock: number;
+  soldQuantity: number;
+  rating: number;
+  reviewsCount: number;
+  images: string[];
+  brand: string | null;
+  freeShipping: boolean;
+  categoryId: string;
+  sellerId: string;
+  status: string;
+  createdAt: Date;
+  description?: string;
+}
+
+export interface SummaryRow {
+  product: SummaryProductRow;
+  seller: UserRow;
+  category: SummaryCategoryRow;
+  parent: SummaryCategoryRow | null;
+  grandparent: SummaryCategoryRow | null;
+}
+
 export function discountPct(price: number, originalPrice: number | null): number | null {
   if (!originalPrice || originalPrice <= price) return null;
   return Math.round((1 - price / originalPrice) * 100);
@@ -32,7 +68,7 @@ export function mapSeller(user: UserRow): SellerSummary {
   };
 }
 
-export function categoryChain(row: JoinedProductRow): CategoryRow[] {
+export function categoryChain(row: SummaryRow): CategoryRow[] {
   return [row.grandparent, row.parent, row.category].filter((category): category is CategoryRow => Boolean(category));
 }
 
@@ -48,7 +84,7 @@ export function mapCategoryFlat(category: CategoryRow): SharedCategory {
   };
 }
 
-export function toProductSummary(row: JoinedProductRow): ProductSummary {
+export function toProductSummary(row: SummaryRow): ProductSummary {
   const { product, seller } = row;
   return {
     id: product.id,

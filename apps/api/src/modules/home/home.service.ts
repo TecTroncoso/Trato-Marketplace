@@ -1,8 +1,9 @@
 import { Injectable } from "@nestjs/common";
 import { and, count, desc, eq, gt, isNotNull } from "drizzle-orm";
+import { TtlCache } from "../../common/ttl-cache";
 import { DbService } from "../../db/db.service";
 import { products } from "../../db/schema";
-import { productSelection } from "../../db/queries/products";
+import { activeProductCardSelection } from "../../db/queries/products";
 import { toProductSummary } from "../../db/mappers";
 import { CategoriesService } from "../categories/categories.service";
 import type { Banner, HomePayload, ProductSummary } from "@trato/shared";
@@ -39,33 +40,36 @@ const HOME_BANNERS: Banner[] = [
 
 @Injectable()
 export class HomeService {
+  private readonly cache = new TtlCache(30_000);
+
   constructor(
     private readonly db: DbService,
     private readonly categories: CategoriesService,
   ) {}
 
   async payload(): Promise<HomePayload> {
+    const cached = this.cache.get<HomePayload>("payload");
+    if (cached) return cached;
+
     const database = this.db.db;
     const [categories, rawDeals, bestSellers, topRated, newest, featured, productCount, activeSellers] =
       await Promise.all([
         this.categories.tree(),
-        productSelection(database)
+        activeProductCardSelection(database)
           .where(and(eq(products.status, "active"), isNotNull(products.originalPrice)))
           .orderBy(desc(products.soldQuantity))
           .limit(40),
-        productSelection(database)
-          .where(eq(products.status, "active"))
+        activeProductCardSelection(database)
           .orderBy(desc(products.soldQuantity))
           .limit(14),
-        productSelection(database)
+        activeProductCardSelection(database)
           .where(and(eq(products.status, "active"), gt(products.reviewsCount, 0)))
           .orderBy(desc(products.rating), desc(products.reviewsCount))
           .limit(14),
-        productSelection(database)
-          .where(eq(products.status, "active"))
+        activeProductCardSelection(database)
           .orderBy(desc(products.createdAt))
           .limit(14),
-        productSelection(database)
+        activeProductCardSelection(database)
           .where(and(eq(products.status, "active"), eq(products.featured, true)))
           .limit(14),
         database.select({ value: count() }).from(products).where(eq(products.status, "active")),
@@ -84,7 +88,7 @@ export class HomeService {
     const bestSellerList = bestSellers.map(toProductSummary);
     const featuredList = featured.length ? featured.map(toProductSummary) : bestSellerList;
 
-    return {
+    const payload: HomePayload = {
       banners: HOME_BANNERS,
       categories,
       deals,
@@ -98,5 +102,6 @@ export class HomeService {
         categories: categories.length,
       },
     };
+    return this.cache.set("payload", payload, 30_000);
   }
 }

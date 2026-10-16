@@ -1,6 +1,9 @@
 import { Body, Controller, Delete, Get, HttpCode, HttpStatus, Param, Patch, Post, Put, UseGuards } from "@nestjs/common";
 import { ApiBearerAuth, ApiTags } from "@nestjs/swagger";
 import { ProductsService } from "./products.service";
+import { QuestionsService } from "../questions/questions.service";
+import { ReviewsService } from "../reviews/reviews.service";
+import { CategoriesService } from "../categories/categories.service";
 import { CreateProductDto, UpdateProductDto } from "./dto/product.dto";
 import { JwtAuthGuard } from "../../common/guards/jwt-auth.guard";
 import { CurrentUser } from "../../common/decorators/current-user.decorator";
@@ -10,7 +13,12 @@ import type { ProductDetail, ProductSummary } from "@trato/shared";
 @ApiTags("products")
 @Controller()
 export class ProductsController {
-  constructor(private readonly products: ProductsService) {}
+  constructor(
+    private readonly products: ProductsService,
+    private readonly questions: QuestionsService,
+    private readonly reviews: ReviewsService,
+    private readonly categories: CategoriesService,
+  ) {}
 
   @Get("products/mine")
   @UseGuards(JwtAuthGuard)
@@ -31,6 +39,29 @@ export class ProductsController {
   @Get("products/:param")
   findByParam(@Param("param") param: string): Promise<ProductDetail> {
     return this.products.findByParam(param);
+  }
+
+  @Get("products/:slug/page")
+  async page(@Param("slug") slug: string) {
+    const product = await this.products.findByParam(slug);
+    const [reviews, questions, related, sellerProducts, category] = await Promise.all([
+      this.reviews.listForProduct(product.id).catch(() => null),
+      this.questions.listForProduct(product.id).catch(() => []),
+      this.products.related(product.id, product.categoryId, product.seller.id, 10).catch(() => []),
+      this.products.bySeller(product.seller.id, 8).catch(() => []),
+      this.categories
+        .findBySlug(product.categorySlug)
+        .then((c) => ({ name: c.name, slug: c.slug, parent: c.parent ? { name: c.parent.name, slug: c.parent.slug } : null }))
+        .catch(() => null),
+    ]);
+    return {
+      product,
+      reviews,
+      questions,
+      related: related.filter((item) => item.id !== product.id),
+      sellerProducts: sellerProducts.filter((item) => item.id !== product.id),
+      category,
+    };
   }
 
   @Post("products/:id/view")

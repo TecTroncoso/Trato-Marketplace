@@ -27,6 +27,15 @@ interface CategoryNode {
   parent?: { name: string; slug: string } | null;
 }
 
+interface ProductPagePayload {
+  product: ProductDetail;
+  reviews: ReviewsPayload;
+  questions: Question[];
+  related: ProductSummary[];
+  sellerProducts: ProductSummary[];
+  category: CategoryNode | null;
+}
+
 const EMPTY_REVIEWS: ReviewsPayload = {
   summary: { average: 0, total: 0, histogram: { "1": 0, "2": 0, "3": 0, "4": 0, "5": 0 } },
   reviews: [],
@@ -54,8 +63,19 @@ export default async function ProductPage({ params }: { params: Promise<{ slug: 
   const { slug } = await params;
 
   let product: ProductDetail;
+  let reviews: ReviewsPayload;
+  let questions: Question[];
+  let related: ProductSummary[];
+  let sellerProducts: ProductSummary[];
+  let category: CategoryNode | null;
   try {
-    product = await serverFetch<ProductDetail>(`/products/${encodeURIComponent(slug)}`, { revalidate: 60 });
+    const page = await serverFetch<ProductPagePayload>(`/products/${encodeURIComponent(slug)}/page`, { revalidate: 60 });
+    product = page.product;
+    reviews = page.reviews;
+    questions = page.questions;
+    related = page.related;
+    sellerProducts = page.sellerProducts;
+    category = page.category;
   } catch (error) {
     if (error instanceof ApiError && error.status === 404) {
       notFound();
@@ -66,14 +86,6 @@ export default async function ProductPage({ params }: { params: Promise<{ slug: 
       </div>
     );
   }
-
-  const [reviews, questions, related, sellerProducts, category] = await Promise.all([
-    serverFetch<ReviewsPayload>(`/products/${product.id}/reviews`, { revalidate: 30 }).catch(() => EMPTY_REVIEWS),
-    serverFetch<Question[]>(`/products/${product.id}/questions`, { revalidate: 30 }).catch(() => [] as Question[]),
-    serverFetch<ProductSummary[]>(`/products/${product.id}/related`, { revalidate: 120 }).catch(() => [] as ProductSummary[]),
-    serverFetch<ProductSummary[]>(`/sellers/${product.seller.id}/products`, { revalidate: 120 }).catch(() => [] as ProductSummary[]),
-    serverFetch<CategoryNode>(`/categories/${product.categorySlug}`, { revalidate: 300 }).catch(() => null),
-  ]);
 
   const crumbs = [
     { label: "Inicio", href: "/" },

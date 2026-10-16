@@ -2,7 +2,7 @@ import { Injectable, NotFoundException } from "@nestjs/common";
 import { and, count, desc, eq, inArray } from "drizzle-orm";
 import { DbService } from "../../db/db.service";
 import { favorites, products } from "../../db/schema";
-import { productSelection } from "../../db/queries/products";
+import { activeProductCardSelection } from "../../db/queries/products";
 import { toProductSummary } from "../../db/mappers";
 import type { ProductSummary } from "@trato/shared";
 
@@ -18,7 +18,7 @@ export class FavoritesService {
       .orderBy(desc(favorites.createdAt));
     const ids = favoriteRows.map((row) => row.productId);
     if (!ids.length) return [];
-    const rows = await productSelection(this.db.db).where(
+    const rows = await activeProductCardSelection(this.db.db).where(
       and(inArray(products.id, ids), eq(products.status, "active")),
     );
     const byId = new Map(rows.map((row) => [row.product.id, row]));

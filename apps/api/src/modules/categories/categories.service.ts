@@ -1,21 +1,27 @@
 import { Injectable, NotFoundException } from "@nestjs/common";
 import { asc } from "drizzle-orm";
+import { TtlCache } from "../../common/ttl-cache";
 import { DbService } from "../../db/db.service";
 import { categories, type CategoryRow } from "../../db/schema";
 import { mapCategoryFlat } from "../../db/mappers";
 import type { Category as SharedCategory } from "@trato/shared";
 
-type CategoryNode = SharedCategory & { children: CategoryNode[] };
+type CategoryNode = SharedCategory & { children: SharedCategory[] };
 
 @Injectable()
 export class CategoriesService {
+  private readonly cache = new TtlCache(60_000);
+
   constructor(private readonly db: DbService) {}
 
   private allRows(): Promise<CategoryRow[]> {
+    const cached = this.cache.get<CategoryRow[]>("all");
+    if (cached) return Promise.resolve(cached);
     return this.db.db
       .select()
       .from(categories)
-      .orderBy(asc(categories.level), asc(categories.order), asc(categories.name));
+      .orderBy(asc(categories.level), asc(categories.order), asc(categories.name))
+      .then((rows) => this.cache.set("all", rows, 60_000));
   }
 
   async tree(): Promise<SharedCategory[]> {

@@ -2,7 +2,7 @@ import { BadRequestException, ForbiddenException, Injectable, NotFoundException 
 import { and, desc, eq, inArray, sql } from "drizzle-orm";
 import { DbService } from "../../db/db.service";
 import { orderItems, orders, products, users } from "../../db/schema";
-import { productSelection } from "../../db/queries/products";
+import { productCardSelection } from "../../db/queries/products";
 import { CheckoutDto, UpdateOrderStatusDto } from "./dto/order.dto";
 import type { OrderItemRow, OrderRow } from "../../db/schema";
 import type { Order as SharedOrder, OrderItem as SharedOrderItem } from "@trato/shared";
@@ -24,7 +24,7 @@ export class OrdersService {
       throw new BadRequestException("El carrito está vacío");
     }
     const productIds = Array.from(new Set(items.map((item) => item.productId)));
-    const rows = await productSelection(this.db.db).where(inArray(products.id, productIds));
+    const rows = await productCardSelection(this.db.db).where(inArray(products.id, productIds));
     const byId = new Map(rows.map((row) => [row.product.id, row]));
 
     let subtotal = 0;

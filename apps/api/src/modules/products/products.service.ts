@@ -2,7 +2,7 @@ import { BadRequestException, ForbiddenException, Injectable, NotFoundException 
 import { and, desc, eq, ne, or, sql } from "drizzle-orm";
 import { DbService } from "../../db/db.service";
 import { categories, products, users } from "../../db/schema";
-import { productSelection } from "../../db/queries/products";
+import { productCardSelection, productSelection } from "../../db/queries/products";
 import { toProductDetail, toProductSummary, type JoinedProductRow } from "../../db/mappers";
 import { CreateProductDto, UpdateProductDto } from "./dto/product.dto";
 import { slugify } from "../../common/slugify";
@@ -128,7 +128,7 @@ export class ProductsService {
   }
 
   async mine(userId: string): Promise<(ProductSummary & { status: string; createdAt: string })[]> {
-    const rows = await productSelection(this.db.db)
+    const rows = await productCardSelection(this.db.db)
       .where(eq(products.sellerId, userId))
       .orderBy(desc(products.createdAt));
     return rows.map((row) => ({
@@ -139,7 +139,7 @@ export class ProductsService {
   }
 
   async bySeller(sellerId: string, limit = 8): Promise<ProductSummary[]> {
-    const rows = await productSelection(this.db.db)
+    const rows = await productCardSelection(this.db.db)
       .where(and(eq(products.sellerId, sellerId), eq(products.status, "active")))
       .orderBy(desc(products.soldQuantity))
       .limit(limit);
@@ -147,7 +147,7 @@ export class ProductsService {
   }
 
   async related(productId: string, categoryId: string, sellerId: string, limit = 8): Promise<ProductSummary[]> {
-    const rows = await productSelection(this.db.db)
+    const rows = await productCardSelection(this.db.db)
       .where(
         and(
           eq(products.status, "active"),
@@ -172,6 +172,7 @@ export class ProductsService {
     return this.related(product.id, product.categoryId, product.sellerId, 10);
   }
 
+
   async registerView(productIdOrSlug: string): Promise<{ id: string; views: number }> {
     const [product] = await this.db.db
       .select({ id: products.id, views: products.views })
@@ -187,6 +188,23 @@ export class ProductsService {
       .where(eq(products.id, product.id))
       .returning({ id: products.id, views: products.views });
     return updated;
+  }
+
+  async page(slugOrId: string): Promise<{
+    product: ProductDetail;
+    related: ProductSummary[];
+    sellerProducts: ProductSummary[];
+  }> {
+    const product = await this.findByParam(slugOrId);
+    const [related, sellerProducts] = await Promise.all([
+      this.related(product.id, product.categoryId, product.seller.id, 10),
+      this.bySeller(product.seller.id, 8),
+    ]);
+    return {
+      product,
+      related: related.filter((item) => item.id !== product.id),
+      sellerProducts: sellerProducts.filter((item) => item.id !== product.id),
+    };
   }
 
   private async findRow(productId: string): Promise<JoinedProductRow> {

@@ -2,9 +2,10 @@ import { Injectable } from "@nestjs/common";
 import { and, eq, gt, gte, inArray, like, lte, or, sql, type SQL } from "drizzle-orm";
 import { DbService } from "../../db/db.service";
 import { CategoriesService } from "../categories/categories.service";
+import { TtlCache } from "../../common/ttl-cache";
 import { products, users } from "../../db/schema";
-import { productSelection } from "../../db/queries/products";
-import { categoryChain, toProductSummary, type JoinedProductRow } from "../../db/mappers";
+import { productCardSelection, productSelection } from "../../db/queries/products";
+import { categoryChain, toProductSummary, type JoinedProductRow, type SummaryRow } from "../../db/mappers";
 import { SearchQueryDto } from "./dto/search.dto";
 import type { FacetBucket, SearchFacets, SearchResult, SortValue } from "@trato/shared";
 
@@ -107,6 +108,7 @@ export function buildFtsMatch(query: string): string {
 @Injectable()
 export class SearchService {
   private ftsReady: Promise<boolean> | null = null;
+  private readonly suggestCache = new TtlCache(30_000, 300);
 
   constructor(
     private readonly db: DbService,
@@ -125,6 +127,9 @@ export class SearchService {
   async suggest(query: string): Promise<string[]> {
     const trimmed = query.trim();
     if (trimmed.length < 2) return [];
+    const cacheKey = `suggest:${normalize(trimmed)}`;
+    const cached = this.suggestCache.get<string[]>(cacheKey);
+    if (cached) return cached;
     const ftsMatch = buildFtsMatch(trimmed);
     if (ftsMatch && (await this.ftsAvailable())) {
       try {
@@ -134,7 +139,7 @@ export class SearchService {
         });
         const titles = Array.from(new Set(response.rows.map((row) => String(row.title))));
         if (titles.length) {
-          return titles.slice(0, 6);
+          return this.suggestCache.set(cacheKey, titles.slice(0, 6), 30_000);
         }
       } catch {
         void 0;
@@ -152,7 +157,7 @@ export class SearchService {
         ),
       )
       .limit(6);
-    return Array.from(new Set(rows.map((row) => row.title))).slice(0, 6);
+    return this.suggestCache.set(cacheKey, Array.from(new Set(rows.map((row) => row.title))).slice(0, 6), 30_000);
   }
 
   private async ftsAvailable(): Promise<boolean> {
@@ -191,8 +196,26 @@ export class SearchService {
     const condition = await this.buildLocalWhere(dto);
     const query = dto.q?.trim() ?? "";
     const ftsPool = query ? await this.candidatesFromFts(query, condition) : null;
-    const rows =
-      ftsPool && ftsPool.length ? ftsPool : await productSelection(this.db.db).where(condition).limit(600);
+
+    if (!query) {
+      const cardRows = await productCardSelection(this.db.db).where(condition).limit(600);
+      const sorted = cardRows
+        .map((row) => ({ row, score: 1 }))
+        .sort((a, b) => this.compareEntries(a, b, (dto.sort ?? "relevance") as SortValue))
+        .map((entry) => entry.row);
+      const start = (page - 1) * perPage;
+      return {
+        hits: sorted.slice(start, start + perPage).map((row) => toProductSummary(row)),
+        total: sorted.length,
+        page,
+        perPage,
+        totalPages: Math.max(1, Math.ceil(sorted.length / perPage)),
+        facets: this.buildLocalFacets(sorted),
+        tookMs: Date.now() - started,
+      };
+    }
+
+    const rows = ftsPool && ftsPool.length ? ftsPool : await productSelection(this.db.db).where(condition).limit(600);
     const scored = rows
       .map((row) => ({ row, score: this.scoreProduct(row, query) }))
       .filter((entry) => (query ? entry.score > 0 : true));
@@ -229,8 +252,8 @@ export class SearchService {
   }
 
   private compareEntries(
-    a: { row: JoinedProductRow; score: number },
-    b: { row: JoinedProductRow; score: number },
+    a: { row: JoinedProductRow | SummaryRow; score: number },
+    b: { row: JoinedProductRow | SummaryRow; score: number },
     sort: SortValue,
   ): number {
     switch (sort) {
@@ -249,7 +272,7 @@ export class SearchService {
     }
   }
 
-  private scoreProduct(row: JoinedProductRow, query: string): number {
+  private scoreProduct(row: JoinedProductRow | SummaryRow, query: string): number {
     const tokens = tokenize(query);
     if (!tokens.length) return 1;
     const { product } = row;
@@ -257,7 +280,7 @@ export class SearchService {
     const words = title.split(/[^a-z0-9]+/).filter(Boolean);
     const brand = normalize(product.brand ?? "");
     const categoryName = normalize(categoryChain(row).map((category) => category.name).join(" "));
-    const description = normalize(product.description);
+    const description = normalize(product.description ?? "");
     let score = 0;
     let matchedAll = true;
     for (const token of tokens) {
@@ -285,7 +308,7 @@ export class SearchService {
     return score;
   }
 
-  private buildLocalFacets(rows: JoinedProductRow[]): SearchFacets {
+  private buildLocalFacets(rows: (JoinedProductRow | SummaryRow)[]): SearchFacets {
     const count = (values: (string | null)[]): FacetBucket[] => {
       const map = new Map<string, number>();
       for (const value of values) {
