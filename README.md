@@ -79,7 +79,7 @@ Trato cubre el ciclo completo de un marketplace de dos lados.
 | ORM | **Drizzle ORM 0.45** | SQL-first y tipado, sin capa de runtime pesada; permite **joins explícitos en una sola query** y SQL crudo cuando conviene, algo clave contra una base remota. |
 | Base de datos | **libSQL** (`@libsql/client`) sobre **SQLite** local o **Turso** distribuido | Turso es SQLite gestionado con réplicas por región: lecturas a latencia de disco local y despliegue en minutos. |
 | Migraciones | **drizzle-kit** | `push` para desarrollo y `generate` para versionar el DDL en SQL (aplicable a Turso con `turso db shell`). |
-| Búsqueda | **Buscador propio in-process** | Cero servicios extra, cero sincronización de índices y $0 de infraestructura: candidatos por SQL, scoring con tolerancia a typos y facetas en memoria. |
+| Búsqueda | **Buscador propio in-process con FTS5** | Cero servicios extra y $0 de infraestructura: candidatos por tabla virtual FTS5 (con triggers y diacríticos), sinónimos en español y scoring con tolerancia a typos. |
 | API | **REST + OpenAPI/Swagger** | Caché y semántica HTTP natural para catálogo; documentación viva en `/api/docs`. |
 | Contratos | **`@trato/shared`** (workspace) | Única fuente de verdad de tipos y constantes para API y web. |
 
@@ -241,6 +241,7 @@ Trato MarketPlace/
    │  ├─ drizzle/               # migraciones SQL versionadas
    │  ├─ scripts/db-info.ts     # inspección de la base configurada
    │  ├─ scripts/fts-setup.ts   # crea/refresh de la tabla virtual FTS5 + triggers
+   │  ├─ scripts/fts-probe.ts   # diagnostico del soporte FTS5 y sintaxis
    │  └─ src/
    │     ├─ main.ts             # bootstrap, prefijo /api/v1, Swagger, pipes, CORS
    │     ├─ config.ts           # env tipado + databaseMode()
@@ -269,7 +270,7 @@ Trato MarketPlace/
       ├─ vercel.json            # modo split (web-only) para Vercel
       └─ src/
          ├─ app/                # rutas del App Router
-         ├─ components/         # ui (22 primitivas), layout, home, product, search, cart, account, auth
+         ├─ components/         # ui (24 primitivas), layout, home, product, search, cart, account, auth
          ├─ store/              # 6 stores de Zustand (persist)
          ├─ hooks/              # useMounted, useDebouncedValue, useOnClickOutside, favoritos
          └─ lib/                # cliente de API, utilidades, parámetros de búsqueda
@@ -320,6 +321,7 @@ Convenciones del esquema (elegidas pensando en Turso):
 npm install          # instala workspaces y compila @trato/shared
 npm run db:push      # crea apps/api/db/trato.db y aplica el esquema
 npm run seed         # 370 productos, 67 categorías, 19 usuarios, opiniones, preguntas, órdenes
+npm run db:fts       # índice full-text del buscador (tabla virtual en la misma base)
 npm run dev          # API en :4000 y Web en :3000 en modo watch
 ```
 
@@ -341,6 +343,7 @@ turso db tokens create trato       # token
 # 3) Aplicar el esquema y cargar datos
 npm run db:push
 npm run seed
+npm run db:fts                     # índice full-text en Turso
 npm run db:info                    # verifica modo, tablas y conteos
 ```
 
@@ -423,7 +426,7 @@ Prefijo global: `/api/v1` · Documentación interactiva: **`/api/docs`** · Aute
 
 | Método | Ruta | Auth | Descripción |
 |---|---|---|---|
-| GET | `/health` | — | Estado de la DB (modo, latencia, fuente de la URL) y **si el esquema está aplicado** (`schema`/`schemaHint`). |
+| GET | `/health` | — | Estado de la DB (modo, latencia, fuente de la URL), **si el esquema está aplicado** (`schema`/`schemaHint`) y el índice del buscador (`searchFts`). |
 | POST | `/auth/register` | — | Alta de usuario; devuelve `{ token, user }`. |
 | POST | `/auth/login` | — | Login; devuelve `{ token, user }`. |
 | GET | `/auth/me` | Sí | Usuario de la sesión. |
@@ -474,10 +477,10 @@ curl -X POST http://localhost:4000/api/v1/auth/login \
 
 | Ruta | Nombre | Renderizado | Estrategia de datos |
 |---|---|---|---|
-| `/` | Home | `ƒ` dinámico | SSR: `fetch /home` con `cache: "no-store"`. |
-| `/buscar` | Resultados | `ƒ` dinámico | SSR: lee `searchParams` y consulta `/search`. |
-| `/categorias/[slug]` | Categoría | `ƒ` dinámico | SSR en paralelo: categoría + búsqueda filtrada. |
-| `/productos/[slug]` | Detalle | `ƒ` dinámico | SSR en paralelo: producto, opiniones, preguntas, relacionados, vendedor, categoría. `generateMetadata` para SEO/OG. |
+| `/` | Home | `ƒ` dinámico (`force-dynamic`) | SSR: `fetch /home` con `next: { revalidate: 60 }` (Data Cache). |
+| `/buscar` | Resultados | `ƒ` dinámico | SSR: lee `searchParams` y consulta `/search` con `revalidate: 30`. |
+| `/categorias/[slug]` | Categoría | `ƒ` dinámico | SSR en paralelo: categoría (300 s) + búsqueda filtrada (30 s). |
+| `/productos/[slug]` | Detalle | `ƒ` dinámico | SSR en paralelo: producto (60 s), opiniones/preguntas (30 s), relacionados y vendedor (120 s), categoría (300 s). `generateMetadata` para SEO/OG. |
 | `/carrito` | Carrito | `○` estático | Estado local (Zustand + localStorage). |
 | `/checkout` | Checkout | `○` estático | Estado local + `POST /orders/checkout`. |
 | `/mis-compras` | Mis compras | `○` estático | Fetch cliente autenticado. |
@@ -515,15 +518,23 @@ Las páginas `○` se prerenderizan como shell y resuelven la sesión en el clie
 Todo se validó ejecutando el sistema real.
 
 ```powershell
-# Estado de la base (modo, latencia y esquema)
+# Estado de la base (modo, latencia, esquema, índice FTS del buscador)
 Invoke-RestMethod http://localhost:4000/api/v1/health
-# → status: ok · database: ok · schema: ok · databaseMode: file · latencyMs: 1
+# → status: ok · database: ok · schema: ok · databaseMode: file · searchFts: true · latencyMs: 1
 
 # Tolerancia a errores tipográficos
 Invoke-RestMethod "http://localhost:4000/api/v1/search?q=samsumg&perPage=3"
 # → total 21 en ~8 ms · top: "Samsung Galaxy S24 Ultra ..." / "Samsung Odyssey G5 ..."
 Invoke-RestMethod "http://localhost:4000/api/v1/search?q=ipone&perPage=2"
 # → iPhones
+
+# FTS5 + sinónimos + categoría
+Invoke-RestMethod "http://localhost:4000/api/v1/search?q=camara&perPage=3"
+# → 30 resultados, top: "Canon EOS R50 ..." (matchea por category_name "Cámaras")
+Invoke-RestMethod "http://localhost:4000/api/v1/search?q=televisor&perPage=3"
+# → 46 Smart TVs (sinónimo tv/television)
+Invoke-RestMethod "http://localhost:4000/api/v1/search?q=heladera%20no%20frost&perPage=3"
+# → 2 heladeras exactas (multi-token AND)
 
 # Facetas y filtros
 Invoke-RestMethod "http://localhost:4000/api/v1/search?brand=Lenovo&perPage=3"
@@ -545,11 +556,13 @@ Resultados observados:
 | `drizzle-kit push` | 9 tablas, 22 índices, 15 FKs |
 | Seed | 19 usuarios · 67 categorías · 370 productos · 963 opiniones · 356 preguntas · 18 órdenes · 20 favoritos |
 | Búsqueda con typos (in-process) | `samsumg` → 21 resultados con Samsung; `ipone` → iPhones |
+| FTS5 + sinónimos | `camara` → 30 resultados, top Canon EOS R50 vía `category_name`; `televisor` → 46 Smart TVs; `heladera no frost` → 2 multi-token; FTS ~2-15 ms, rescate ~40-55 ms |
 | Facetas | marcas/condiciones/ubicaciones con contadores sobre el resultado |
 | Checkout | batch atómico, stock descontado, visible en mis compras |
 | Validaciones | carrito vacío, falta de token y cantidad fuera de rango devuelven mensajes claros |
+| ISR en Vercel | home/búsqueda/ficha sirven desde el Data Cache de Next incluso con la API caída (verificado matando la API y re-probeando) |
 | SSR | home, búsqueda, categoría, detalle, carrito, checkout y favoritos responden con contenido esperado |
-| Imágenes | SVG servidos con HTTP 200 |
+| Imágenes | SVG + favicon.ico servidos con HTTP 200 |
 
 ---
 
@@ -565,9 +578,10 @@ Trampas reales encontradas durante la construcción, y cómo se resolvieron.
 | `SQL<unknown>` no es aceptado por `client.execute` | Se pasaba un objeto SQL de Drizzle a la API cruda de libSQL | `client.execute("select 1")` para el probe, `db.run(sql\`…\`)` para SQL de Drizzle |
 | `addressSnapshot` no coincidía con el tipo de la columna JSON | El DTO tiene `phone` opcional y la columna lo exige `string \| null` | Normalizar en el servicio: `{ ...dto.address, phone: dto.address.phone ?? null }` |
 | `prisma migrate dev` colgaba esperando input | Prompt interactivo de nombre de migración | Reemplazado por `drizzle-kit push --force` (determinista) y `db:generate` para versionar |
-| En Vercel, `/health` decía `database: ok` pero todo devolvía `no such table: categories` | `select 1` funciona en una base vacía: el probe de conexión no detecta esquema faltante | El health ahora consulta una tabla real (`categories`) y reporta `schema: missing` + `schemaError` + `schemaHint` |
-| Turso con `libsql://` remota quedaba en modo réplica y colgaba | `databaseMode()` interpretaba `TURSO_SYNC_URL` presente sin mirar la URL | La réplica exige `file:`: remoto gana si la URL no es archivo |
-| Réplica embebida fallaba con `invalid local state: db file exists but metadata file does not` | El archivo `file:` era un `.db` plano de `db:push`, no una réplica de libSQL | Usar un archivo nuevo para la réplica; `db:push` y la app no deben compartir el mismo archivo en modo réplica. |
+| En Vercel, el build multi-service falló con `Service "api" has entrypoint "dist/main.js" but that path does not exist` | Vercel valida el `entrypoint` al clonar, **antes** de correr el `buildCommand` (y `dist/` está gitignored) | El entrypoint apunta a la fuente: `src/main.ts`. Además el Framework Preset del proyecto debe ser **Services** (con `Next.js` queda el warning "possible configuration mismatch") |
+| En Vercel, `/productos/[slug]` con API caída renderizaba la tarjeta offline y se cacheaba | `export const revalidate` a nivel de ruta dispara un revalidate en background; si el render de revalidación falla, la página de error puede quedar cacheada | Se quitó el `revalidate` de ruta y quedó la caché por `fetch` (`next: { revalidate }`): el contenido sigue sirviéndose del Data Cache aunque la API esté caída (verificado) |
+| FTS5 con `( a OR b ) "c"*` sin `AND` explícito entre grupos | Gramática de FTS5: el AND implícito solo aplica entre términos simples, no después de un grupo paréntesis | `buildFtsMatch` une los grupos de sinónimos con `AND` explícito y `candidatesFromFts` hace fallback al scan si la sintaxis FTS falla |
+| En la consola del deploy de Vercel aparecen errores `M_ID` desde un script `200.js` | El HTML del deploy no referencia `200.js` ni `M_ID` (verificado): lo inyecta la plataforma o una extensión del navegador | Ruido de consola sin impacto; se confirma en modo incógnito sin extensiones |
 
 ---
 
