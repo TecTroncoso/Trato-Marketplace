@@ -39,7 +39,6 @@ Es un **proyecto de demostración de ingeniería**, no un comercio real: los pag
 19. [Limitaciones conocidas](#limitaciones-conocidas)
 20. [Roadmap](#roadmap)
 21. [Despliegue en producción (Vercel + Turso)](#despliegue-en-producción-vercel--turso)
-
 ---
 
 ## Descripción general
@@ -613,22 +612,9 @@ Trampas reales encontradas durante la construcción, y cómo se resolvieron.
 
 ## Roadmap
 
-**Corto plazo**
-- Suite de tests: unitarios (scorer, mappers) y e2e con Supertest y Playwright.
-- Las optimizaciones de latencia pendientes: `select` recortado, ISR, keyset pagination, desnormalización del vendedor, caché de home/facetas.
-- Subida real de imágenes (S3/MinIO) y rate limiting.
+El plan completo de optimizaciones (seguridad, latencia, calidad de código, infraestructura y producto) — cada item con su evidencia, solución y esfuerzo estimado, incluyendo la auditoría de secretos — está en **[roadmap.md](./roadmap.md)**.
 
-**Mediano plazo**
-- Buscador in-process con **FTS5** (ya implementado via `npm run db:fts`): candidatos por MATCH + scorer con tolerancia, sinónimos e idioma.
-- Pasarela de pago real (MercadoPago) con webhooks y estados de pago.
-- Mensajería comprador-vendedor y notificaciones en tiempo real.
-- Dockerfiles, CI/CD con `drizzle-kit migrate` automático.
-- Multi-región con réplicas embebidas por zona y métricas de latencia por región.
-
-**Largo plazo**
-- Extracción de microservicios (checkout primero), manteniendo NestJS como monolito modular.
-- Multi-moneda/multi-país con `@trato/shared` como contrato i18n.
-- Recomendaciones personalizadas sobre eventos de navegación.
+Resumen de la línea base: todo el stack es gratuito (Vercel + Turso), la búsqueda usa FTS5 in-process, el checkout es batch atómico con stock atómico, y las próximas prioridades son rate limiting, fail-fast de secretos y caché in-process.
 
 ---
 
